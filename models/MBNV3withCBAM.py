@@ -3,8 +3,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import functions as f
-from CBAM import CBAM as cbam
+import models.functions as f
+from models.CBAM import CBAM as cbam
 
 #defining hswift and hsigmoid activation functions
 class h_sigmoid(nn.Module):
@@ -105,9 +105,9 @@ class InvertedResidualBlock(nn.Module):
 
     
 #defining the MobileNetV3 model
-class MobileNetV3(nn.Module):
+class MobileNetV3CBAM(nn.Module):
     def __init__(self, mode, num_classes=10, mu=1.0, dropout=0.2):
-        super(MobileNetV3, self).__init__()
+        super(MobileNetV3CBAM, self).__init__()
         self.num_classes = num_classes
 
         if mode == 'small':

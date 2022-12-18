@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import functions as f
+import models.functions as f
 
 #defining hswift and hsigmoid activation functions
 class h_sigmoid(nn.Module):
