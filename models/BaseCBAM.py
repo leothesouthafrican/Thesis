@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from CBAM import CBAM
+from models.CBAM import CBAM
 
 class ConvolutionalNetCBAM(nn.Module):
     def __init__(self,input_channels = 3, num_classes=10, image_size=28):
