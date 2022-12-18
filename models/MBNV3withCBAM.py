@@ -164,22 +164,22 @@ class MobileNetV3CBAM(nn.Module):
 
         elif mode == 'large':
             self.cfg = [
-                #in, out, k, s, nl, se,  exp
-                [16, 16, 3, 1, "RE", False, 16],
-                [16, 24, 3, 2, "RE", False, 64],
-                [24, 24, 3, 1, "RE", False, 72],
-                [24, 40, 5, 2, "RE", True, 72],
-                [40, 40, 5, 1, "RE", True, 120],
-                [40, 40, 5, 1, "RE", True, 120],
-                [40, 80, 3, 2, "HS", False, 240],
-                [80, 80, 3, 1, "HS", False, 200],
-                [80, 80, 3, 1, "HS", False, 184],
-                [80, 80, 3, 1, "HS", False, 184],
-                [80, 112, 3, 1, "HS", True, 480],
-                [112, 112, 3, 1, "HS", True, 672],
-                [112, 160, 5, 2, "HS", True, 672],
-                [160, 160, 5, 1, "HS", True, 672],
-                [160, 160, 5, 1, "HS", True, 960],
+                #in, out, k, s, nl, se, CBAM,  exp
+                [16, 16, 3, 1, "RE", False, False, 16],
+                [16, 24, 3, 2, "RE", False, False, 64],
+                [24, 24, 3, 1, "RE", False, False, 72],
+                [24, 40, 5, 2, "RE", True, False,72],
+                [40, 40, 5, 1, "RE", True, False,120],
+                [40, 40, 5, 1, "RE", True, False,120],
+                [40, 80, 3, 2, "HS", False, False,240],
+                [80, 80, 3, 1, "HS", False, False,200],
+                [80, 80, 3, 1, "HS", False, False,184],
+                [80, 80, 3, 1, "HS", False, False,184],
+                [80, 112, 3, 1, "HS", True, False,480],
+                [112, 112, 3, 1, "HS", True, True,672],
+                [112, 160, 5, 2, "HS", True,True,672],
+                [160, 160, 5, 1, "HS", True, True,672],
+                [160, 160, 5, 1, "HS", True, True,960],
             ]
 
             first_conv_out = f._make_divisible(16 * mu)
@@ -190,11 +190,11 @@ class MobileNetV3CBAM(nn.Module):
             )
 
             self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
+            for i, (in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size) in enumerate(self.cfg):
                 in_channels = f._make_divisible(in_channels * mu)
                 out_channels = f._make_divisible(out_channels * mu)
                 exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE, exp_size))
+                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size))
             self.layers = nn.Sequential(*self.layers)
 
             conv1_in = f._make_divisible(160 * mu) # making the input channels divisible
@@ -227,13 +227,3 @@ class MobileNetV3CBAM(nn.Module):
         x = self.out_conv3(x)
         x = x.view(x.size(0), -1)
         return x
-
-
-if __name__ == '__main__':
-    device = 'mps'
-    model = MobileNetV3(mode='small', num_classes=10)
-    model = model.to(device)
-
-    dummy_input = torch.randn(1, 3, 224, 224).to(device)
-
-    out = model(dummy_input)
