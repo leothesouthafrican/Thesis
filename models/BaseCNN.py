@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from CBAM import CBAM
 
 class ConvolutionalNet(nn.Module):
     def __init__(self,input_channels = 3, num_classes=10, image_size=28):
@@ -52,11 +51,6 @@ class ConvolutionalNet(nn.Module):
         out = self.fc2(out)
         out = self.fc3(out)
         return out
-
-# Pass random data through the network to check the output shape
-x = torch.randn(1, 3, 28, 28)
-model = ConvolutionalNet()
-print(model(x).shape)
 
 
 
