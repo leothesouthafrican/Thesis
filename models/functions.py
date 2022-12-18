@@ -24,7 +24,7 @@ def _weights_init(m):
     elif isinstance(m, nn.Linear):
         n = m.weight.size(1)
         m.weight.data.normal_(0, 0.01)
-        m.bias.data.zero_()
+        #m.bias.data.zero_()
 
 def _make_divisible(v, divisor=8, min_value=None):
     if min_value is None:
@@ -35,7 +35,7 @@ def _make_divisible(v, divisor=8, min_value=None):
         new_v += divisor
     return new_v
 
-def epoch_time(start_time, end_time):
+def epoch_step_time(start_time, end_time):
     elapsed_time = end_time - start_time
     elapsed_mins = int(elapsed_time / 60)
     elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
@@ -71,6 +71,7 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
 
             # Training Loop 
             for x, y in tqdm(train_loader):
+                step_start_time = time.time() # start time of the batch
                 x = x.to(device)
                 y = y.to(device)
                 optimizer.zero_grad()   # zero the parameter gradients          
@@ -84,10 +85,13 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
                 optimizer.step()        # adjust parameters based on the calculated gradients 
                 running_train_loss +=train_loss.item()  # track the loss value
 
+                step_end_time = time.time() # end time of the batch
+
                 # Log the metrics to Comet.ml
                 experiment.log_metrics({
                     "loss": train_loss.item(),
-                    "acc": train_acc.item()
+                    "acc": train_acc.item(),
+                    'step_time': epoch_step_time(step_start_time, step_end_time)[1]
                     }
                     ,step=steps, epoch=epoch)
                 steps += 1 
@@ -130,7 +134,7 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             end_time = time.time() # end time of the epoch
 
             # Calculate the time taken for the epoch
-            epoch_mins, epoch_secs = epoch_time(start_time, end_time)
+            epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
 
             # Print the statistics of the epoch 
             print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc *100:.2f}%')

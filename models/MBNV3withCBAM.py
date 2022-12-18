@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import models.functions as f
+from models.CBAM import CBAM as cbam
 
 #defining hswift and hsigmoid activation functions
 class h_sigmoid(nn.Module):
@@ -45,11 +46,12 @@ class SqueezeBlock(nn.Module): #defining the squeeze and excitation block
 
 #defining the residual block
 class InvertedResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernal_size, stride, NL, SE, exp_size):
+    def __init__(self, in_channels, out_channels, kernal_size, stride, NL, SE, CBAM, exp_size):
         super(InvertedResidualBlock, self).__init__()
         self.out_channels = out_channels
         self.NL = NL
         self.SE = SE
+        self.CBAM = cbam
         padding = (kernal_size - 1) // 2 #padding to maintain the dimensionality
 
         self.use_connect = stride == 1 and in_channels == out_channels #using the residual connection 
@@ -74,6 +76,9 @@ class InvertedResidualBlock(nn.Module):
         if self.SE:
             self.squeeze_block = SqueezeBlock(exp_size)
 
+        if self.CBAM:
+            self.CBAM = cbam(exp_size)
+
         self.point_conv = nn.Sequential(
             nn.Conv2d(exp_size, out_channels, kernel_size=1, stride=1, padding=0), #pointwise convolution
             nn.BatchNorm2d(out_channels), #batch normalization
@@ -88,6 +93,9 @@ class InvertedResidualBlock(nn.Module):
         if self.SE:
             out = self.squeeze_block(out)
 
+        if self.CBAM:
+            out = self.CBAM(out)
+
         out = self.point_conv(out)
 
         if self.use_connect:
@@ -97,25 +105,25 @@ class InvertedResidualBlock(nn.Module):
 
     
 #defining the MobileNetV3 model
-class MobileNetV3(nn.Module):
+class MobileNetV3CBAM(nn.Module):
     def __init__(self, mode, num_classes=10, mu=1.0, dropout=0.2):
-        super(MobileNetV3, self).__init__()
+        super(MobileNetV3CBAM, self).__init__()
         self.num_classes = num_classes
 
         if mode == 'small':
             self.cfg = [
-                #in, out, k, s, nl, se,  exp
-                [16, 16, 3, 2, "RE", True, 16],
-                [16, 24, 3, 2, "RE", False, 72],
-                [24, 24, 3, 1, "RE", False, 88],
-                [24, 40, 5, 2, "RE", True, 96],
-                [40, 40, 5, 1, "RE", True, 240],
-                [40, 40, 5, 1, "RE", True, 240],
-                [40, 48, 5, 1, "HS", True, 120],
-                [48, 48, 5, 1, "HS", True, 144],
-                [48, 96, 5, 2, "HS", True, 288],
-                [96, 96, 5, 1, "HS", True, 576],
-                [96, 96, 5, 1, "HS", True, 576],
+                #in, out, k, s, nl, se, CBAM, exp
+                [16, 16, 3, 2, "RE", True, False, 16],
+                [16, 24, 3, 2, "RE", False, False, 72],
+                [24, 24, 3, 1, "RE", False, False, 88],
+                [24, 40, 5, 2, "RE", True, False, 96],
+                [40, 40, 5, 1, "RE", True, False, 240],
+                [40, 40, 5, 1, "RE", True, False, 240],
+                [40, 48, 5, 1, "HS", True, False, 120],
+                [48, 48, 5, 1, "HS", True, True, 144],
+                [48, 96, 5, 2, "HS", True, True, 288],
+                [96, 96, 5, 1, "HS", True, True, 576],
+                [96, 96, 5, 1, "HS", True, True, 576],
             ]
 
             first_conv_out = f._make_divisible(16 * mu)
@@ -127,11 +135,11 @@ class MobileNetV3(nn.Module):
             )
 
             self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
+            for i, (in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size) in enumerate(self.cfg):
                 in_channels = f._make_divisible(in_channels * mu)
                 out_channels = f._make_divisible(out_channels * mu)
                 exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE, exp_size))
+                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size))
             self.layers = nn.Sequential(*self.layers)
 
             conv1_in = f._make_divisible(96 * mu) # making the input channels divisible
@@ -223,7 +231,7 @@ class MobileNetV3(nn.Module):
 
 if __name__ == '__main__':
     device = 'mps'
-    model = MobileNetV3(mode='large', num_classes=10)
+    model = MobileNetV3(mode='small', num_classes=10)
     model = model.to(device)
 
     dummy_input = torch.randn(1, 3, 224, 224).to(device)
