@@ -4,3 +4,4 @@ config.py
 data/
 __pycache__/
 .ipynb_checkpoints/
+subjects_0/
