@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import models.functions as f
+import utils.functions as f
 from models.CBAM import CBAM as cbam
 
 #defining hswift and hsigmoid activation functions
