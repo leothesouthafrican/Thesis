@@ -5,3 +5,4 @@ data/
 __pycache__/
 .ipynb_checkpoints/
 subjects_0/
+*.pt
