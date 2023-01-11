@@ -2,44 +2,9 @@ import time
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from comet_ml import Experiment
-import matplotlib.pyplot as plt
-import pandas as pd
 import os
-import numpy as np
-from PIL import Image
-import concurrent.futures
-
-def display_filters(state_dict, experiment, channels=1):
-    # Extract the weights of the convolutional layers from the state dictionary
-    filters1 = None
-    for key, value in state_dict.items():
-        if 'conv1' in key and 'weight' in key:
-            filters1 = value
-    
-    # Copy the filters to the host memory
-    filters1 = filters1.cpu().numpy()
-
-    # Calculate the number of rows and columns based on the number of filters
-    num_filters = filters1.shape[0]
-    num_cols = 5
-    num_rows = (num_filters // num_cols) + (num_filters % num_cols != 0)
-
-    # Display the filters using Matplotlib
-    plt.figure(figsize=(20, 10))
-    for i in range(num_filters):
-        plt.subplot(num_rows, num_cols, i+1)
-        plt.imshow(filters1[i][0], cmap='gray')
-        plt.axis('off')
-
-    # Save the plot to the experiment using log_figure
-    experiment.log_figure(figure=plt.gcf(), figure_name='filters_1.png')
-
-    # Display the plot (optional)
-    plt.show()
-
-    return filters1
-
+import zipfile
+from concurrent.futures import ProcessPoolExecutor
 
 def get_model_parameters(model):
     total_parameters = 0
@@ -160,8 +125,6 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             if accuracy > best_accuracy: 
                 torch.save(model.state_dict(), best_model_path)
                 best_accuracy = accuracy
-                display_filters(model.state_dict(), experiment) #logs the filters to Comet.ml
-                print("Filters saved")
 
             # Log the metrics to Comet.ml
             experiment.log_metrics({
@@ -236,89 +199,22 @@ def confusion(model,test_loader, experiment, device):
     #Get the confusion matrix
     experiment.log_confusion_matrix(y_pred, y_true)
 
-
-
-class ImageDataset_CSV:
-    """
-    A class that takes a folder of images used in a classification task and returns a csv file
-    with data pertaining to the image as well as the image itself in an array format.
-    """
-    def __init__(self, root_folder_path, output_file_path, img_size=224):
-        self.root_folder_path = root_folder_path
-        self.output_file_path = output_file_path
-        self.img_size = img_size
-
-    def get_image_data(self):
-        """Returns a list of dictionaries with the data of each image in the folder.
-        """
-        image_data = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-            # Create a list of tasks to be executed concurrently
-            tasks = [executor.submit(self.get_image_data_for_folder, folder) for folder in os.listdir(self.root_folder_path)]
-
-            # Iterate over the tasks and collect the results
-            for task in tqdm(concurrent.futures.as_completed(tasks), total=len(tasks), desc='Processing images in {}'.format(self.root_folder_path)):
-                image_data.extend(task.result())
-
-        return image_data
-
-    def get_image_data_for_folder(self, folder):
-        """Returns a list of dictionaries with the data of each image in the given folder.
-        """
-        data = []
-        for file in os.listdir(os.path.join(self.root_folder_path, folder)):
-            data.append({
-                'image_path': os.path.join(self.root_folder_path, folder, file),
-                'image_label': folder,
-                'image_array': self.get_image_array(os.path.join(self.root_folder_path, folder, file))
-            })
-        return data
-
-    def get_image_array(self, image_path):
-        """Returns an array of the image.
-        """
-        img = Image.open(image_path)
-        img = img.resize((self.img_size, self.img_size))
-        img = np.array(img)
-        return img
-
-
-
-    def create_csv(self):
-        """Creates a csv file with the data of each image in the folder without pandas
-        """
-
-        # Get the image data
-        image_data = self.get_image_data()
-
-        # Create the csv file
-        with open(self.output_file_path, 'w') as csv_file:
-            # Create the header
-            csv_file.write('image_path,image_label,')
-            for i in range(self.img_size * self.img_size * 3):
-                csv_file.write('pixel_{},'.format(i))
-            csv_file.write(' ')
-
-            # Write the data in parallel
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                # Create a list of tasks to execute in parallel
-                tasks = [executor.submit(self._write_image_data, csv_file, image) for image in image_data]
-                # Iterate over the tasks and display the progress using tqdm
-                for f in tqdm(concurrent.futures.as_completed(tasks),total = len(tasks), desc='Writing to {}'.format(self.output_file_path)):
-                    pass
-
-    def _write_image_data(self, csv_file, image):
-        """Write the data for a single image to the csv file"""
-        csv_file.write('{},{},'.format(image['image_path'], image['image_label']))
-        for pixel in image['image_array'].flatten():
-            csv_file.write('{},'.format(pixel))
-        csv_file.write(' ')
-
-
-
-if __name__ == '__main__':
-    # Create a Comet.ml experiment
+def unzip_files(directory):
+    """Takes a directory path and unzips all the zip files in the directory using parallel processing"""
+    # Get a list of all the zip files in the directory
+    zip_files = [f for f in os.listdir(directory) if f.endswith(".zip")]
     
-    create_dataset = ImageDataset_CSV('data/train', 'data/train.csv')
-    #create_dataset.get_image_data()
-    create_dataset.create_csv()
+    if not zip_files:
+        print("No zip files found in the directory.")
+        return
+    
+    # Unzip the files using a process pool
+    with ProcessPoolExecutor() as executor:
+        for zip_file in zip_files:
+            path = os.path.join(directory, zip_file)
+            executor.submit(unzip, path)
+            
+def unzip(path):
+    """Unzip a single zip file"""
+    with zipfile.ZipFile(path, "r") as zip_ref:
+        zip_ref.extractall(os.path.dirname(path))
