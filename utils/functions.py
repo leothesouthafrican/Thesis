@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 import os
+import json
 import zipfile
 from concurrent.futures import ProcessPoolExecutor
 
@@ -51,7 +52,7 @@ def calculate_accuracy(y_pred, y):
     return acc
 
 # Training Function 
-def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_model_path, device, experiment): 
+def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_model_path, device, experiment, save_at_end = False): 
 
     with experiment.train():
         best_accuracy = 0.0 
@@ -102,18 +103,22 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             with torch.no_grad(): 
                 model.eval() 
                 for x, y in tqdm(val_loader): 
-                    
+
                     x = x.to(device)
                     y = y.to(device)
                     y_pred = model(x)
-                
+
                     val_loss = loss_fn(y_pred, y) 
-                
+
                     # The label with the highest value will be our prediction 
                     _, predicted = torch.max(y_pred, 1) 
                     running_vall_loss += val_loss.item() # track the loss value
                     total += y.size(0) # track the total number of samples
                     running_accuracy += (predicted == y).sum().item() 
+
+                    # save predictions vs ground as the names of the files truth to txt file
+                    with open('output/predictions.txt', 'a') as f:
+                        f.write(f'Ground: {y} Predicted: {predicted}')
 
             # Calculate validation loss value 
             val_loss_value = running_vall_loss/len(val_loader) 
@@ -125,6 +130,11 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             if accuracy > best_accuracy: 
                 torch.save(model.state_dict(), best_model_path)
                 best_accuracy = accuracy
+
+            elif save_at_end and epoch == num_epochs:
+                file_name = best_model_path.split('.')[0]
+                suffix = best_model_path.split('.')[1]
+                torch.save(model.state_dict(), f'{file_name}_end.{suffix}')
 
             # Log the metrics to Comet.ml
             experiment.log_metrics({
@@ -199,6 +209,27 @@ def confusion(model,test_loader, experiment, device):
     #Get the confusion matrix
     experiment.log_confusion_matrix(y_pred, y_true)
 
+def get_kaggle_data(api_token, dataset_name, data_destination):
+    """Download a dataset from Kaggle using the API token"""
+    # Create a kaggle directory in the home directory
+    kaggle_dir = os.path.join(os.path.expanduser("~"), ".kaggle")
+    if not os.path.exists(kaggle_dir):
+        os.makedirs(kaggle_dir)
+    
+    # Create a kaggle.json file with the API token
+    kaggle_json = os.path.join(kaggle_dir, "kaggle.json")
+    with open(kaggle_json, "w") as f:
+        json.dump(api_token, f)
+
+    # Download the dataset
+    command = f"kaggle datasets download -d {dataset_name} -p {data_destination}"
+
+    # Run the command
+    os.system(command)
+
+    # Unzip the files
+    unzip_files(data_destination)
+    
 def unzip_files(directory):
     """Takes a directory path and unzips all the zip files in the directory using parallel processing"""
     # Get a list of all the zip files in the directory
