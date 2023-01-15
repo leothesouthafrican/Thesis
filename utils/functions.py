@@ -52,15 +52,15 @@ def calculate_accuracy(y_pred, y):
     return acc
 
 # Training Function 
-def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_model_path, device, experiment, save_at_end = False): 
+def train(model,loss_fn, optimizer, hyper_params,train_loader, val_loader): 
 
-    with experiment.train():
+    with hyper_params['comet_experiment'].train():
         best_accuracy = 0.0 
 
         #setting the model to train mode
         model.train()
         print("Begin training...") 
-        for epoch in range(1, num_epochs+1): 
+        for epoch in range(1, hyper_params['epochs']+1): 
             running_train_loss = 0.0 # training loss
             running_accuracy = 0.0  # validation accuracy
             running_vall_loss = 0.0  # validation loss
@@ -75,8 +75,8 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             # Training Loop 
             for x, y in tqdm(train_loader):
                 step_start_time = time.time() # start time of the batch
-                x = x.to(device)
-                y = y.to(device)
+                x = x.to(hyper_params['device'])
+                y = y.to(hyper_params['device'])
                 optimizer.zero_grad()   # zero the parameter gradients          
                 y_pred = model(x)   # predict output from the model 
                 train_loss = loss_fn(y_pred, y)   # calculate loss for the predicted output
@@ -91,7 +91,7 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
                 step_end_time = time.time() # end time of the batch
 
                 # Log the metrics to Comet.ml
-                experiment.log_metrics({
+                hyper_params['comet_experiment'].log_metrics({
                     "loss": train_loss.item(),
                     "acc": train_acc.item(),
                     'step_time': epoch_step_time(step_start_time, step_end_time)[1]
@@ -104,8 +104,8 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
                 model.eval() 
                 for x, y in tqdm(val_loader): 
 
-                    x = x.to(device)
-                    y = y.to(device)
+                    x = x.to(hyper_params['device'])
+                    y = y.to(hyper_params['device'])
                     y_pred = model(x)
 
                     val_loss = loss_fn(y_pred, y) 
@@ -128,16 +128,16 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
 
             # Save the model if the accuracy is the best 
             if accuracy > best_accuracy: 
-                torch.save(model.state_dict(), best_model_path)
+                torch.save(model.state_dict(), hyper_params['best_model_path'])
                 best_accuracy = accuracy
 
-            elif save_at_end and epoch == num_epochs:
-                file_name = best_model_path.split('.')[0]
-                suffix = best_model_path.split('.')[1]
+            elif hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
+                file_name = hyper_params['best_model_path'].split('.')[0]
+                suffix = hyper_params['best_model_path'].split('.')[1]
                 torch.save(model.state_dict(), f'{file_name}_end.{suffix}')
 
             # Log the metrics to Comet.ml
-            experiment.log_metrics({
+            hyper_params['comet_experiment'].log_metrics({
                 "val_loss": val_loss_value,
                 "val_acc": accuracy
                 }
@@ -154,7 +154,7 @@ def train(num_epochs, model, loss_fn, optimizer, train_loader, val_loader, best_
             print(f'\t Val. Loss: {val_loss_value:.3f} |  Val. Acc: {accuracy*100:.2f}%')
 
 #Evaluation Function
-def evaluate(model, iterator, criterion, device, experiment):
+def evaluate(model, test_loader, criterion, device, experiment):
     
     epoch_loss = 0
     epoch_acc = 0
@@ -163,7 +163,7 @@ def evaluate(model, iterator, criterion, device, experiment):
 
     with torch.no_grad(): #Turning off gradient calculation
 
-        for (x, y) in tqdm(iterator):
+        for (x, y) in tqdm(test_loader):
 
             x = x.to(device)
             y = y.to(device)
@@ -178,8 +178,8 @@ def evaluate(model, iterator, criterion, device, experiment):
 
             epoch_acc += acc.item()
 
-            total_loss = epoch_loss / len(iterator)
-            total_acc = epoch_acc / len(iterator)
+            total_loss = epoch_loss / len(test_loader)
+            total_acc = epoch_acc / len(test_loader)
 
             # Log the metrics to Comet.ml
             experiment.log_metrics({
@@ -187,7 +187,7 @@ def evaluate(model, iterator, criterion, device, experiment):
                 "acc": total_acc*100
                 })
 
-    return epoch_loss / len(iterator), epoch_acc / len(iterator)
+    return epoch_loss / len(test_loader), epoch_acc / len(test_loader)
 
 def confusion(model,test_loader, experiment, device):
     
