@@ -130,11 +130,14 @@ def train(model,loss_fn, optimizer, hyper_params,train_loader, val_loader):
             if accuracy > best_accuracy: 
                 torch.save(model.state_dict(), hyper_params['best_model_path'])
                 best_accuracy = accuracy
+                print('Model saved on best accuracy!')
 
-            elif hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
+            if hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
                 file_name = hyper_params['best_model_path'].split('.')[0]
                 suffix = hyper_params['best_model_path'].split('.')[1]
                 torch.save(model.state_dict(), f'{file_name}_end.{suffix}')
+                print('Model saved at the end of training!')
+
 
             # Log the metrics to Comet.ml
             hyper_params['comet_experiment'].log_metrics({
