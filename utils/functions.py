@@ -116,10 +116,6 @@ def train(model,loss_fn, optimizer, hyper_params, train_loader, val_loader):
                     total += y.size(0) # track the total number of samples
                     running_accuracy += (predicted == y).sum().item() 
 
-                    # save predictions vs ground as the names of the files truth to txt file
-                    with open('output/predictions.txt', 'a') as f:
-                        f.write(f'Ground: {y} Predicted: {predicted}')
-
             # Calculate validation loss value 
             val_loss_value = running_val_loss/len(val_loader) 
 
@@ -130,7 +126,7 @@ def train(model,loss_fn, optimizer, hyper_params, train_loader, val_loader):
             if accuracy > best_accuracy: 
                 torch.save(model.state_dict(), hyper_params['best_model_path'])
                 best_accuracy = accuracy
-                print(f'Best model saved at epoch {epoch} with accuracy {accuracy} and loss {val_loss_value}.')
+                print(f'Best model saved at epoch {epoch + 1} with accuracy {round(accuracy,4)} and loss {round(val_loss_value,4)}.')
 
             elif hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
                 file_name = hyper_params['best_model_path'].split('.')[0]
@@ -161,11 +157,8 @@ def evaluate(model, test_loader, criterion, device, experiment):
 
         epoch_loss = 0
         epoch_acc = 0
-
         model.eval() #Setting the model to evaluation mode
-
         with torch.no_grad(): #Turning off gradient calculation
-
             for (x, y) in tqdm(test_loader):
 
                 x = x.to(device)
@@ -174,13 +167,9 @@ def evaluate(model, test_loader, criterion, device, experiment):
                 y_pred = model(x)
 
                 loss = criterion(y_pred, y)
-
                 acc = calculate_accuracy(y_pred, y)
-
                 epoch_loss += loss.item()
-
                 epoch_acc += acc.item()
-
                 total_loss = epoch_loss / len(test_loader)
                 total_acc = epoch_acc / len(test_loader)
 
