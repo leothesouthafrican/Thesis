@@ -1,10 +1,12 @@
-#MobileNet V3 Model
+#MobileNet V3 ModelCBAM
+import sys
+sys.path.append('/Users/leo/Desktop/Thesis/utils')
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import functions as f
-from CBAM import CBAM as cbam
+from CBAM import CBAM as CBAM_Module
 
 #defining hswift and hsigmoid activation functions
 class h_sigmoid(nn.Module):
@@ -30,7 +32,7 @@ class InvertedResidualBlock(nn.Module):
         super(InvertedResidualBlock, self).__init__()
         self.out_channels = out_channels
         self.NL = NL
-        self.CBAM = cbam
+        self.CBAM = CBAM
         padding = (kernal_size - 1) // 2 #padding to maintain the dimensionality
 
         self.use_connect = stride == 1 and in_channels == out_channels #using the residual connection 
@@ -53,7 +55,7 @@ class InvertedResidualBlock(nn.Module):
         )
 
         if self.CBAM:
-            self.CBAM = cbam(exp_size)
+            self.CBAM_Module = CBAM_Module(exp_size)
 
         self.point_conv = nn.Sequential(
             nn.Conv2d(exp_size, out_channels, kernel_size=1, stride=1, padding=0), #pointwise convolution
@@ -67,9 +69,10 @@ class InvertedResidualBlock(nn.Module):
         out = self.depth_conv(out)
 
         if self.CBAM:
-            out = self.CBAM(out)
+            out = self.CBAM_Module(out)
 
-        out = self.point_conv(out)
+        out = self.point_conv(out) #pointwise convolution to reduce the number of channels to the output channels so that the output channels
+                                    #are the same as the input channels for the residual connection
 
         if self.use_connect:
             return x + out
@@ -85,7 +88,7 @@ class MobileNetV3CBAM(nn.Module):
 
         if mode == 'small':
             self.cfg = [
-                #in, out, k, s, nl, CBAM, exp
+                #in, out, k, s, nl, CBAM,  exp
                 [16, 16, 3, 2, "RE", True, 16],
                 [16, 24, 3, 2, "RE", False, 72],
                 [24, 24, 3, 1, "RE", False, 88],
@@ -108,18 +111,18 @@ class MobileNetV3CBAM(nn.Module):
             )
 
             self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size) in enumerate(self.cfg):
+            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
                 in_channels = f._make_divisible(in_channels * mu)
                 out_channels = f._make_divisible(out_channels * mu)
                 exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE,CBAM, exp_size))
+                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, CBAM, exp_size))
             self.layers = nn.Sequential(*self.layers)
 
             conv1_in = f._make_divisible(96 * mu) # making the input channels divisible
             conv1_out = f._make_divisible(576 * mu) # making the output channels divisible
             self.out_conv1 = nn.Sequential(
                 nn.Conv2d(conv1_in, conv1_out, kernel_size=3, stride=1, padding=1, groups=conv1_in),
-                cbam(conv1_out),
+                CBAM_Module(conv1_out),
                 nn.BatchNorm2d(conv1_out),
                 h_swish(inplace=True))
 
@@ -137,8 +140,8 @@ class MobileNetV3CBAM(nn.Module):
 
         elif mode == 'large':
             self.cfg = [
-                #in, out, k, s, nl, se, CBAM,  exp
-                [16, 16, 3, 1, "RE", False, 16], 
+                #in, out, k, s, nl, se,  exp
+                [16, 16, 3, 1, "RE", False, 16],
                 [16, 24, 3, 2, "RE", False, 64],
                 [24, 24, 3, 1, "RE", False, 72],
                 [24, 40, 5, 2, "RE", True, 72],
@@ -163,18 +166,18 @@ class MobileNetV3CBAM(nn.Module):
             )
 
             self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL,CBAM, exp_size) in enumerate(self.cfg):
+            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
                 in_channels = f._make_divisible(in_channels * mu)
                 out_channels = f._make_divisible(out_channels * mu)
                 exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL,CBAM, exp_size))
+                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE, exp_size))
             self.layers = nn.Sequential(*self.layers)
 
             conv1_in = f._make_divisible(160 * mu) # making the input channels divisible
             conv1_out = f._make_divisible(960 * mu) # making the output channels divisible
             self.out_conv1 = nn.Sequential(
                 nn.Conv2d(conv1_in, conv1_out, kernel_size=3, stride=1, padding=1, groups=conv1_in),
-                cbam(conv1_out),
+                CBAM_Module(conv1_out),
                 nn.BatchNorm2d(conv1_out),
                 h_swish(inplace=True))
 
