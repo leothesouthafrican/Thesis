@@ -146,9 +146,9 @@ def train(model,loss_fn, optimizer, hyper_params, train_loader, val_loader):
             epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
 
             # Print the statistics of the epoch 
-            print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc *100:.2f}%')
+            print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc *100}%')
             print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
-            print(f'\t Val. Loss: {val_loss_value:.3f} |  Val. Acc: {accuracy*100:.2f}%')
+            print(f'\t Val. Loss: {val_loss_value:.3f} |  Val. Acc: {accuracy*100}%')
 
 #Evaluation Function
 def evaluate(model, test_loader, criterion, device, experiment):
