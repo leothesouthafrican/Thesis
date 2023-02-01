@@ -52,132 +52,114 @@ def calculate_accuracy(y_pred, y):
     return acc
 
 # Training Function 
-def train(model,loss_fn, optimizer, hyper_params, train_loader, val_loader): 
+def train(model,loss_fn, optimizer, hyper_params, train_loader, val_loader, neptune_run): 
+    # Initialize the best accuracy to 0
+    best_accuracy = 0.0
 
-    with hyper_params['comet_exp'].train():
-        best_accuracy = 0.0 
+    #setting the model to train mode
+    model.train()
+    print("Begin training...") 
+    for epoch in range(1, hyper_params['epochs']+1):
+        running_train_loss = 0.0 # training loss
+        running_accuracy = 0.0  # validation accuracy
+        running_val_loss = 0.0  # validation loss
+        total = 0 # total number of samples
+        start_time = time.time() # start time of the epoch
 
-        #setting the model to train mode
-        model.train()
-        print("Begin training...") 
-        for epoch in range(1, hyper_params['epochs']+1):
-            running_train_loss = 0.0 # training loss
-            running_accuracy = 0.0  # validation accuracy
-            running_val_loss = 0.0  # validation loss
-            total = 0 # total number of samples
-            steps = 0 # number of batches
-            start_time = time.time() # start time of the epoch
+        #avoiding unbound variable error
+        train_loss = 0
+        train_acc = 0
 
-            #avoiding unbound variable error
-            train_loss = 0
-            train_acc = 0
+        # Training Loop 
+        for x, y in tqdm(train_loader):
+            step_start_time = time.time() # start time of the batch
+            x = x.to(hyper_params['device'])
+            y = y.to(hyper_params['device'])
+            optimizer.zero_grad()   # zero the parameter gradients          
+            y_pred = model(x)   # predict output from the model 
+            train_loss = loss_fn(y_pred, y)   # calculate loss for the predicted output
 
-            # Training Loop 
-            for x, y in tqdm(train_loader):
-                step_start_time = time.time() # start time of the batch
+            # Calculate the training accuracy
+            train_acc = calculate_accuracy(y_pred, y)
+
+            train_loss.backward()   # backpropagate the loss 
+            optimizer.step()        # adjust parameters based on the calculated gradients 
+            running_train_loss +=train_loss.item()  # track the loss value
+
+            step_end_time = time.time() # end time of the batch
+
+        # Validation Loop 
+        with torch.no_grad(): 
+            model.eval() 
+            for x, y in tqdm(val_loader): 
+
                 x = x.to(hyper_params['device'])
                 y = y.to(hyper_params['device'])
-                optimizer.zero_grad()   # zero the parameter gradients          
-                y_pred = model(x)   # predict output from the model 
-                train_loss = loss_fn(y_pred, y)   # calculate loss for the predicted output
-
-                # Calculate the training accuracy
-                train_acc = calculate_accuracy(y_pred, y)
-
-                train_loss.backward()   # backpropagate the loss 
-                optimizer.step()        # adjust parameters based on the calculated gradients 
-                running_train_loss +=train_loss.item()  # track the loss value
-
-                step_end_time = time.time() # end time of the batch
-
-                # Log the metrics to Comet.ml
-                hyper_params['comet_exp'].log_metrics({
-                    "loss": train_loss.item(),
-                    "acc": train_acc.item(),
-                    'step_time': epoch_step_time(step_start_time, step_end_time)[1]
-                    }
-                    ,step=steps, epoch=epoch)
-                steps += 1 
-
-            # Validation Loop 
-            with torch.no_grad(): 
-                model.eval() 
-                for x, y in tqdm(val_loader): 
-
-                    x = x.to(hyper_params['device'])
-                    y = y.to(hyper_params['device'])
-                    y_pred = model(x)
-
-                    val_loss = loss_fn(y_pred, y) 
-
-                    # The label with the highest value will be our prediction 
-                    _, predicted = torch.max(y_pred, 1) 
-                    running_val_loss += val_loss.item() # track the loss value
-                    total += y.size(0) # track the total number of samples
-                    running_accuracy += (predicted == y).sum().item() 
-
-            # Calculate validation loss value 
-            val_loss_value = running_val_loss/len(val_loader) 
-
-            # Calculate accuracy as the number of correct predictions in the validation batch divided by the total number of predictions done.  
-            accuracy = running_accuracy / total    
-
-            # Save the model if the accuracy is the best 
-            if accuracy > best_accuracy: 
-                torch.save(model.state_dict(), hyper_params['best_model_path'])
-                best_accuracy = accuracy
-                print(f'Best model saved at epoch {epoch + 1} with accuracy {round(accuracy,4)} and loss {round(val_loss_value,4)}.')
-
-            elif hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
-                file_name = hyper_params['best_model_path'].split('.')[0]
-                suffix = hyper_params['best_model_path'].split('.')[1]
-                torch.save(model.state_dict(), f'{file_name}_end.{suffix}')
-
-            # Log the metrics to Comet.ml
-            hyper_params['comet_exp'].log_metrics({
-                "val_loss": val_loss_value,
-                "val_acc": accuracy
-                }
-                ,step=epoch)
-
-            end_time = time.time() # end time of the epoch
-
-            # Calculate the time taken for the epoch
-            epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
-
-            # Print the statistics of the epoch 
-            print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc *100}%')
-            print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
-            print(f'\t Val. Loss: {val_loss_value:.3f} |  Val. Acc: {accuracy*100}%')
-
-#Evaluation Function
-def evaluate(model, test_loader, criterion, device, experiment):
-    
-    with experiment.test():
-
-        epoch_loss = 0
-        epoch_acc = 0
-        model.eval() #Setting the model to evaluation mode
-        with torch.no_grad(): #Turning off gradient calculation
-            for (x, y) in tqdm(test_loader):
-
-                x = x.to(device)
-                y = y.to(device)
-
                 y_pred = model(x)
 
-                loss = criterion(y_pred, y)
-                acc = calculate_accuracy(y_pred, y)
-                epoch_loss += loss.item()
-                epoch_acc += acc.item()
-                total_loss = epoch_loss / len(test_loader)
-                total_acc = epoch_acc / len(test_loader)
+                val_loss = loss_fn(y_pred, y) 
 
-                # Log the metrics to Comet.ml
-                experiment.log_metrics({
-                    "loss": total_loss,
-                    "acc": total_acc*100
-                    })
+                # The label with the highest value will be our prediction 
+                _, predicted = torch.max(y_pred, 1) 
+                running_val_loss += val_loss.item() # track the loss value
+                total += y.size(0) # track the total number of samples
+                running_accuracy += (predicted == y).sum().item() 
+
+        # Calculate validation loss value 
+        val_loss_value = running_val_loss/len(val_loader) 
+
+        # Calculate accuracy as the number of correct predictions in the validation batch divided by the total number of predictions done.  
+        accuracy = running_accuracy / total    
+
+        # Save the model if the accuracy is the best 
+        if accuracy > best_accuracy: 
+            torch.save(model.state_dict(), hyper_params['best_model_path'])
+            best_accuracy = accuracy
+            print(f'Best model saved at epoch {epoch + 1} with accuracy {round(accuracy,4)} and loss {round(val_loss_value,4)}.')
+
+        elif hyper_params['save_at_end'] and epoch == hyper_params['epochs']:
+            file_name = hyper_params['best_model_path'].split('.')[0]
+            suffix = hyper_params['best_model_path'].split('.')[1]
+            torch.save(model.state_dict(), f'{file_name}_end.{suffix}')
+
+        end_time = time.time() # end time of the epoch
+
+        # Calculate the time taken for the epoch
+        epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
+
+        #log metrics to neptune
+        neptune_run['train/loss'].append(train_loss)
+        neptune_run['train/acc'].append(train_acc)
+        neptune_run['val/loss'].append(val_loss_value)
+        neptune_run['val/acc'].append(accuracy)
+        neptune_run['epoch_time_seconds'] = epoch_mins*60 + epoch_secs
+
+        # Print the statistics of the epoch 
+        print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc *100:.2f}%')
+        print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
+        print(f'\t Val. Loss: {val_loss_value:.3f} |  Val. Acc: {accuracy*100:.2f}%')
+
+#Evaluation Function
+def evaluate(model, test_loader, criterion, device, neptune_run):
+
+    epoch_loss = 0
+    epoch_acc = 0
+    model.eval() #Setting the model to evaluation mode
+    with torch.no_grad(): #Turning off gradient calculation
+        for (x, y) in tqdm(test_loader):
+
+            x = x.to(device)
+            y = y.to(device)
+
+            y_pred = model(x)
+
+            loss = criterion(y_pred, y)
+            acc = calculate_accuracy(y_pred, y)
+            epoch_loss += loss.item()
+            epoch_acc += acc.item()
+
+    neptune_run['test/loss'] = epoch_loss/len(test_loader)
+    neptune_run['test/acc'] = epoch_acc/len(test_loader)
 
     return epoch_loss / len(test_loader), epoch_acc / len(test_loader)
 
