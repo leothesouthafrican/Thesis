@@ -111,7 +111,7 @@ class MobileNetV3CBAM(nn.Module):
             )
 
             self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
+            for i, (in_channels, out_channels, kernal_size, stride, NL, CBAM, exp_size) in enumerate(self.cfg):
                 in_channels = f._make_divisible(in_channels * mu)
                 out_channels = f._make_divisible(out_channels * mu)
                 exp_size = f._make_divisible(exp_size * mu)

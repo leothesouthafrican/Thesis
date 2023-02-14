@@ -6,6 +6,8 @@ import os
 import json
 import zipfile
 from concurrent.futures import ProcessPoolExecutor
+import matplotlib.pyplot as plt
+import numpy as np
 
 def get_model_parameters(model):
     total_parameters = 0
@@ -163,7 +165,16 @@ def evaluate(model, test_loader, criterion, device, neptune_run):
 
     return epoch_loss / len(test_loader), epoch_acc / len(test_loader)
 
-def confusion(model,test_loader, experiment, device):
+def confusion_matrix(y_pred, y_true):
+    n_classes = int(torch.max(y_true)) + 1
+    cm = torch.zeros(n_classes, n_classes, dtype=torch.int64)
+    for i in range(n_classes):
+        for j in range(n_classes):
+            mask = (y_true == i) * (y_pred == j)
+            cm[i, j] = torch.sum(mask)
+    return cm
+
+def confusion(model,test_loader,run, device):
     
     #Get the predictions
     y_pred = []
@@ -180,8 +191,28 @@ def confusion(model,test_loader, experiment, device):
     y_pred = torch.cat(y_pred)
     y_true = torch.cat(y_true)
 
-    #Get the confusion matrix
-    experiment.log_confusion_matrix(y_pred, y_true)
+    #Plot the confusion matrix
+    cm = confusion_matrix(y_pred, y_true)
+
+    # Plot the confusion matrix as an image
+    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.colorbar()
+    tick_marks = np.arange(cm.shape[0])
+    plt.xticks(tick_marks, range(cm.shape[0]))
+    plt.yticks(tick_marks, range(cm.shape[0]))
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    
+    # Save the confusion matrix image to a file
+    file_name = 'confusion_matrix.png'
+    plt.savefig(file_name)
+    
+    # Log the confusion matrix image as an artifact to Neptune
+    run['test/confusion_matrix'].upload(file_name)
+
+    return cm
+
+
 
 def get_kaggle_data(api_token, dataset_name, data_destination):
     """Download a dataset from Kaggle using the API token"""
