@@ -1,37 +1,57 @@
 import torch
 import torch.nn as nn
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-class CBAM(nn.Module):
+class ChannelAttention(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
-        super(CBAM, self).__init__()
-        self.in_channels = in_channels
-        self.reduction_ratio = reduction_ratio
-
-        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc1 = nn.Linear(in_channels, in_channels // reduction_ratio, bias=False)
-        self.fc2 = nn.Linear(in_channels // reduction_ratio, in_channels, bias=False)
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.sharedMLP = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels // reduction_ratio, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels // reduction_ratio, in_channels, 1, bias=False)
+        )
         self.sigmoid = nn.Sigmoid()
 
-        self.channel_avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc3 = nn.Linear(in_channels, in_channels // reduction_ratio, bias=False)
-        self.fc4 = nn.Linear(in_channels // reduction_ratio, in_channels, bias=False)
-        self.sigmoid2 = nn.Sigmoid()
+    def forward(self, x):
+        avg_out = self.sharedMLP(self.avg_pool(x))
+        max_out = self.sharedMLP(self.max_pool(x))
+        out = avg_out + max_out
+        out = self.sigmoid(out)
+        return x * out
+    
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super().__init__()
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        b, c, h, w = x.size()
-        y = self.global_avg_pool(x)
-        y = y.view(b, c)
-        y = self.fc1(y)
-        y = self.fc2(y)
-        y = self.sigmoid(y).view(b, c, 1, 1)
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv(x)
 
-        z = self.channel_avg_pool(x)
-        z = z.view(b, c)
-        z = self.fc3(z)
-        z = self.fc4(z)
-        z = self.sigmoid2(z).view(b, c, 1, 1)
+        return self.sigmoid(x)
+    
+class _CBAM(nn.Module):
+    def __init__(self, in_channels, reduction_ratio=16):
+        super().__init__()
+        self.ca = ChannelAttention(in_channels, reduction_ratio)
+        self.sa = SpatialAttention()
 
-        att = y * z
-        x = x * att
+    def forward(self, x):
+        x = self.ca(x)
+        y = x * self.sa(x)
 
-        return x
+        #check if skip connection is possible
+        if x.shape == y.shape:
+            y = x + y
+        else:
+            pass
+        return y

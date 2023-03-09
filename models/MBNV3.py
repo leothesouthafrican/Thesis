@@ -198,6 +198,7 @@ class MobileNetV3(nn.Module):
                 nn.BatchNorm2d(conv1_out),
                 h_swish(inplace=True))
 
+            nn.AdaptiveAvgPool1d(output_size=1)
             conv_2_in = f._make_divisible(960 * mu) # making the output channels divisible
             conv_2_out = f._make_divisible(1280 * mu) # making the output channels divisible
             self.out_conv2 = nn.Sequential(
@@ -209,6 +210,7 @@ class MobileNetV3(nn.Module):
             self.out_conv3 = nn.Sequential(
                 nn.Conv2d(conv_3_in, self.num_classes, kernel_size=1, stride=1, padding=0)
             )
+            #fc = nn.Linear(1280, num_classes)
 
         self.apply(f._weights_init)
 
@@ -218,15 +220,15 @@ class MobileNetV3(nn.Module):
         x = self.out_conv1(x)
         x = self.out_conv2(x)
         x = self.out_conv3(x)
-        x = x.view(x.size(0), -1)
+        #x = x.view(x.size(0), -1)
         return x
 
-
 if __name__ == '__main__':
-    device = 'mps'
-    model = MobileNetV3(mode='large', num_classes=10)
-    model = model.to(device)
+    model = MobileNetV3(mode='small', num_classes=10)
+    print(model)
+    x = torch.randn(1, 3, 224, 224)
+    y = model(x)
+    print(y.size())
 
-    dummy_input = torch.randn(1, 3, 224, 224).to(device)
-
-    out = model(dummy_input)
+    flops = f.count_flops(model, x.shape)
+    print(f)
