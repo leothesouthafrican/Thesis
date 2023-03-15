@@ -1,3 +1,6 @@
+import sys
+sys.path.append("/Users/leo/Desktop/Thesis/utils/")
+
 import time
 import shutil
 import torch
@@ -7,6 +10,9 @@ from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+from torch.utils.data import DataLoader
+from torchvision import transforms
+import random
 
 #setting the seed for reproducibility
 torch.manual_seed(42)
@@ -29,6 +35,16 @@ def set_device():
     torch.device(device)
 
     return device
+
+def load_model(model, path):
+    # Load the state dict
+    state_dict = torch.load(path)
+
+    # Load the model weights
+    model.load_state_dict(state_dict)
+
+    print(f"Model loaded from {path}")
+    return model
 
 def copy_n_folders_with_most_files(src_folder, dest_folder, n):
     subfolders = [f.path for f in os.scandir(src_folder) if f.is_dir()]
@@ -54,6 +70,35 @@ def _weights_init(m):
         m.weight.data.normal_(0, 0.01)
         #m.bias.data.zero_()
 
+def mean_std_finder(data_path):
+    
+    transform_img = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(256),
+        transforms.ToTensor(),
+    ])
+
+    image_data = torchvision.datasets.ImageFolder(
+        root=data_path, transform=transform_img
+    )
+
+    image_data_loader = DataLoader(
+        image_data, 
+        batch_size=len(image_data), 
+        shuffle=False, 
+        num_workers=0
+    )
+
+    def mean_std(loader):
+        images, lebels = next(iter(loader))
+        # shape of images = [b,c,w,h]
+        mean, std = images.mean([0,2,3]), images.std([0,2,3])
+        return mean, std
+    mean, std = mean_std(image_data_loader)
+    print("mean and std: \n", mean, std)
+
+    return mean, std
+
 def _make_divisible(v, divisor=8, min_value=None):
     if min_value is None:
         min_value = divisor
@@ -65,87 +110,25 @@ def _make_divisible(v, divisor=8, min_value=None):
 
 def epoch_step_time(start_time, end_time):
     elapsed_time = end_time - start_time
-    elapsed_mins = int(elapsed_time / 60)
-    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
-    return elapsed_mins, elapsed_secs
+    elapsed_mins, elapsed_secs = divmod(elapsed_time, 60)
+    elapsed_secs = int(elapsed_secs)
+    elapsed_millisecs = int((elapsed_time - int(elapsed_time)) * 1000)
+    return elapsed_mins, elapsed_secs, elapsed_millisecs
 
 # Function to calculate the accuracy of the model
 def calculate_accuracy(y_pred, y):
     top_pred = y_pred.argmax(1, keepdim=True) #get the index of the max log-probability
     correct = top_pred.eq(y.view_as(top_pred)).sum() #get the number of correct predictions
     acc = correct.float() / y.shape[0] #calculate the accuracy
-
-    #save to txt file
-    np.savetxt('y_pred_training.txt', y_pred.detach().cpu().numpy(), delimiter=',')
-    np.savetxt('y_pred_top.txt', top_pred.detach().cpu().numpy(), delimiter=',')
     return acc
 
-def MBNV3_build(num_classes, model, weights, module, device):
-    
-    #load the model
-    model = model(weights = weights)
-    print(f"Model loaded with {weights} weights")
-
-    #change the last layer to output specified number of classes
-    model.classifier[3] = nn.Linear(model.classifier[-1].in_features, num_classes, bias=True)
-    print(f"Output layer modified to output {num_classes} classes")
-
-    if module != None:
-        #replace the SE block with CBAM
-        counter = 0
-        for i in range(len(model.features)):
-            try:
-                if type(model.features[i].block[2]) == torchvision.ops.misc.SqueezeExcitation:
-                    #get the output shape of the layer before the SE block
-                    prev_out_channels = model.features[i].block[0].out_channels
-                    #replace the SE block with CBAM
-                    model.features[i].block[2] = module(prev_out_channels)
-                    counter += 1
-            except:
-                pass
-        print(f"{counter} SE blocks replaced with {module}")
-    
-    #freeze the weights of the model except the last layer and the inserted module layers
-    for param in model.parameters():
-        param.requires_grad = False
-
-    for param in model.classifier[-1].parameters():
-        param.requires_grad = True
-    print("Weights of the model frozen except the last layer and the inserted module layers")
-
-    #init the weights of the last layer
-    model.classifier[3].apply(_weights_init)
-    print("Weights of the last layer initialized")
-
-    #init the weights of the inserted module layers or the SE block
-    if module != None:
-        for i in range(len(model.features)):
-            try:
-                if type(model.features[i].block[2]) == module:
-                    #init the weights of the inserted module layers
-                    model.features[i].block[2].apply(_weights_init)
-                    for param in model.features[i].block[2].parameters():
-                        param.requires_grad = True
-            except:
-                pass
-        print("Weights of the inserted module layers initialized and weights trainable")
-    else:
-        for i in range(len(model.features)):
-            try:
-                if type(model.features[i].block[2]) == torchvision.ops.misc.SqueezeExcitation:
-                    #init the weights of the SE block
-                    model.features[i].block[2].apply(_weights_init)
-                    for param in model.features[i].block[2].parameters():
-                        param.requires_grad = True
-            except:
-                pass
-        print("Weights of the SE block initialized and weights trainable")
-
-    return model.to(device)
-
 #train the model
-def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, verbose = 0):
+def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, verbose = 0, experiment = False):
 
+    #log hyperparameters
+    experiment.log_parameters({key: val for key, val in hyper_params.items() if key != "model"}) if experiment else None
+
+    #send model to device
     model.to(hyper_params["device"])
 
     #initialise the best validation accuracy
@@ -166,6 +149,7 @@ def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, v
 
         start_time = time.time() # start time of the epoch
         #loop through batches
+        step = 0
         for inputs, labels in tqdm(train_loader, disable= True if verbose == 0 else False):
             #send inputs and labels to device
             inputs = inputs.to(hyper_params["device"])
@@ -184,6 +168,8 @@ def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, v
             running_loss += loss.item() * inputs.size(0)
             _, preds = torch.max(outputs, 1)
             running_corrects += torch.sum(preds == labels.data)
+            step += 1
+
         #calculate epoch loss and accuracy
         epoch_loss = running_loss / len(train_loader.dataset)
         epoch_acc = running_corrects.float() / len(train_loader.dataset)
@@ -199,7 +185,14 @@ def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, v
         val_acc.append(vall_acc)
 
         end_time = time.time() # end time of the epoch
-        epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
+        epoch_mins, epoch_secs, epoch_ms = epoch_step_time(start_time, end_time)
+
+        #log metrics to comet_ml
+        if experiment:
+            experiment.log_metric("train_loss", epoch_loss, step=epoch)
+            experiment.log_metric("train_acc", epoch_acc, step=epoch)
+            experiment.log_metric("val_loss", val_loss, step=epoch)
+            experiment.log_metric("val_acc", vall_acc, step=epoch)
 
         if verbose > 1:
             # Print the statistics of the epoch
@@ -244,8 +237,7 @@ def validate(model, val_loader, criterion, hyper_params, verbose):
     return epoch_loss, epoch_acc
 
 #test the model
-def test(model, test_loader, criterion, hyper_params):
-
+def test(model, test_loader, criterion, hyper_params, experiment = False):
     start_time = time.time() # start time of the epoch
 
     #load the best model
@@ -255,6 +247,8 @@ def test(model, test_loader, criterion, hyper_params):
     #initialise variables to store metrics
     running_loss = 0.0
     running_corrects = 0
+    all_preds = []
+    all_labels = []
     #loop through batches
     for inputs, labels in test_loader:
         #send inputs and labels to device
@@ -268,20 +262,35 @@ def test(model, test_loader, criterion, hyper_params):
         running_loss += loss.item() * inputs.size(0)
         _, preds = torch.max(outputs, 1)
         running_corrects += torch.sum(preds == labels.data)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
     #calculate epoch loss and accuracy
     epoch_loss = running_loss / len(test_loader.dataset)
     epoch_acc = running_corrects.float() / len(test_loader.dataset)
 
     end_time = time.time() # end time of the epoch
 
-    epoch_mins, epoch_secs = epoch_step_time(start_time, end_time)
+    epoch_mins, epoch_secs, epoch_ms = epoch_step_time(start_time, end_time)
 
     #print metrics
     print(f"Test loss: {epoch_loss:.3f}.. ")
     print(f"Test accuracy: {epoch_acc:.3f}")
-    print(f"Test Time: {epoch_mins}m {epoch_secs}s")
+    print(f"Test Time: {epoch_mins}m {epoch_secs}s {epoch_ms}ms")
+
+    #log metrics to comet_ml
+    if experiment:
+        inference_time = (end_time - start_time) / len(test_loader.dataset)
+        experiment.log_metric("test_loss", epoch_loss)
+        experiment.log_metric("test_accuracy", epoch_acc)
+        experiment.log_metric("inference_time", inference_time)
+        experiment.log_confusion_matrix(all_labels, all_preds)
+
+        #close experiment
+        experiment.end() if experiment else None
+
     #return metrics
     return epoch_loss, epoch_acc
+
 
 #plot metrics
 def plot_metrics(train_losses, train_acc, val_losses, val_acc):
@@ -306,3 +315,79 @@ def delete_ds_store(root_path):
             if file.endswith('.DS_Store'):
                 file_path = os.path.join(subdir, file)
                 os.remove(file_path)
+
+def copy_folder(src_path, dst_path):
+    try:
+        shutil.rmtree(dst_path)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"Error deleting {dst_path}: {e}")
+        return
+
+    try:
+        shutil.copytree(src_path, dst_path)
+        print(f"Successfully copied {src_path} to {dst_path}")
+    except Exception as e:
+        print(f"Error copying {src_path} to {dst_path}: {e}")
+
+def split_data_into_train_val_test(data_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
+    # create train, val, and test directories
+    train_dir = os.path.join(data_dir, "train")
+    val_dir = os.path.join(data_dir, "val")
+    test_dir = os.path.join(data_dir, "test")
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(val_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
+
+    # loop over all class folders in data_dir
+    for class_folder in os.listdir(data_dir):
+        if not os.path.isdir(os.path.join(data_dir, class_folder)):
+            continue
+
+        # create class subdirectories in train, val, and test directories
+        train_class_dir = os.path.join(train_dir, class_folder)
+        val_class_dir = os.path.join(val_dir, class_folder)
+        test_class_dir = os.path.join(test_dir, class_folder)
+        os.makedirs(train_class_dir, exist_ok=True)
+        os.makedirs(val_class_dir, exist_ok=True)
+        os.makedirs(test_class_dir, exist_ok=True)
+
+        # get list of all image files for this class
+        class_images = [f for f in os.listdir(os.path.join(data_dir, class_folder)) if os.path.isfile(os.path.join(data_dir, class_folder, f))]
+        num_images = len(class_images)
+        num_train_images = int(num_images * train_ratio)
+        num_val_images = int(num_images * val_ratio)
+        num_test_images = num_images - num_train_images - num_val_images
+
+        # randomly shuffle image files
+        random.shuffle(class_images)
+
+        # move images to train, val, and test directories
+        for i in range(num_train_images):
+            src_path = os.path.join(data_dir, class_folder, class_images[i])
+            dest_path = os.path.join(train_class_dir, class_images[i])
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dest_path)
+                shutil.rmtree(src_path)
+            else:
+                shutil.copy(src_path, dest_path)
+                os.remove(src_path)
+        for i in range(num_train_images, num_train_images+num_val_images):
+            src_path = os.path.join(data_dir, class_folder, class_images[i])
+            dest_path = os.path.join(val_class_dir, class_images[i])
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dest_path)
+                shutil.rmtree(src_path)
+            else:
+                shutil.copy(src_path, dest_path)
+                os.remove(src_path)
+        for i in range(num_train_images+num_val_images, num_images):
+            src_path = os.path.join(data_dir, class_folder, class_images[i])
+            dest_path = os.path.join(test_class_dir, class_images[i])
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dest_path)
+                shutil.rmtree(src_path)
+            else:
+                shutil.copy(src_path, dest_path)
+                os.remove(src_path)

@@ -31,10 +31,10 @@ class SAM(nn.Module):
         #Get the key and query values
         key = self.key_conv(x).view(batch_size, -1, H*W) #batch_size, C//reduction, H*W -> (1, 4, 1024)
 
-        query = self.query_conv(x).view(batch_size, -1, H*W) #batch_size, C//reduction, H*W -> (1, 4, 1024)
+        query = self.query_conv(x).view(batch_size, -1, H*W).permute(0, 2, 1) #batch_size, C//reduction, H*W -> (1, 1024, 4)
 
-        #Get the energy which is the dot product of key and query
-        energy = torch.bmm(key.permute(0, 2, 1), query) #batch_size, H*W, H*W -> (1, 1024, 1024)
+        #Get the energy which is the dot product of query and key
+        energy = torch.bmm(query, key) #batch_size, H*W, H*W -> (1, 1024, 1024)
 
         #Get the attention
         attention = self.softmax(energy) #batch_size, H*W, H*W -> (1, 1024, 1024)
@@ -59,67 +59,56 @@ class CAM(nn.Module):
 
     def __init__(self, in_channels, **kwargs):
         super(CAM, self).__init__()
-        self.beta = nn.Parameter(torch.zeros(1))
+        self.beta = nn.Parameter(torch.zeros(1), requires_grad=True)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
 
         #Get the batch size
-        batch_size, _, height, width = x.size() #batch_size, C, H, W -> (1, 64, 32, 32)
+        batch_size, channels, height, width = x.size() #batch_size, C, H, W -> (1, 3, 3, 3
 
-        #Get the key and query values
-        key = x.view(batch_size, -1, height * width) #batch_size, C, H*W -> (1, 64, 1024)
+        query = x.view(batch_size, channels, -1) #batch_size, C, H*W -> (1, 3, 9)
 
-        query = x.view(batch_size, -1, height * width).permute(0, 2, 1) #batch_size, H*W, C -> (1, 1024, 64)
+        key = x.view(batch_size, channels, -1).permute(0, 2, 1) #batch_size, H*W, C -> (1, 9, 3)
 
-        attention = torch.bmm(key, query) #batch_size, C, C -> (1, 64, 64)
+        #Get the energy which is the dot product of key and query
+        energy = torch.bmm(query, key) #batch_size, C, C -> (1, 3, 3)
 
-        attention_new = torch.max(attention, dim=-1, keepdim=True)[0].expand_as(attention) - attention #batch_size, C, C -> (1, 64, 64)
-
-        attention = self.softmax(attention_new) #batch_size, C, C -> (1, 64, 64)
-
-        feat_e = torch.bmm(attention, key).view(batch_size, -1, height, width) #batch_size, C, H, W -> (1, 64, 32, 32)
-
-        out = self.beta * feat_e #batch_size, C, H, W -> (1, 64, 32, 32)
+        #Get the energy new
+        energy_new = torch.max(energy, -1, keepdim=True)[0].expand_as(energy) - energy #batch_size, C, C -> (1, 3, 3) this is the max value of the energy matrix
         
-        #add the original input
-        out = out + x #batch_size, C, H, W -> (1, 64, 32, 32)
-        
+        #Get the attention
+        attention = self.softmax(energy_new) #batch_size, C, C -> (1, 3, 3)
+
+        #Get the value
+        value = x.view(batch_size, channels, -1) #batch_size, C, H*W -> (1, 3, 9)
+
+        #Get the output
+        out = torch.bmm(attention, value) #batch_size, C, H*W -> (1, 3, 9)
+
+        #Get the output
+        out = out.view(batch_size, channels, height, width) #batch_size, C, H, W -> (1, 3, 3, 3)
+
+        #Get the output
+        out = self.beta * out #batch_size, C, H, W -> (1, 3, 3, 3)
+
+        #Add the original input
+        out = out + x #batch_size, C, H, W -> (1, 3, 3, 3)
+
         return out
 
 #Part 3: The DANet Module
-class DANet(nn.Module):
+class _DANet(nn.Module):
     def __init__(self, in_channels, reduction=8):
-        super(DANet, self).__init__()
+        super(_DANet, self).__init__()
         self.sam = SAM(in_channels, reduction)
         self.cam = CAM(in_channels)
 
     def forward(self, x):
         out = self.sam(x) + self.cam(x)
         return out
-    
-if __name__ == "__main__":
-    
-        import torch
-        from PIL import Image
-        import torchvision.transforms as transforms
-        import matplotlib.pyplot as plt
-        model = DANet(64)
 
-        def image_to_64Ctensor(path, size=(128, 128)):
-            image = Image.open(path).convert('RGB')
-            transform = transforms.Compose([transforms.ToTensor(),
-                                            transforms.Resize(size)])
-            tensor = transform(image).unsqueeze(0)
 
-            conv2d = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=1, padding=0)
-
-            return conv2d(tensor)
-
-        cam = CAM(64)
-        sam = SAM(64)
-
-        #
 
 
 
