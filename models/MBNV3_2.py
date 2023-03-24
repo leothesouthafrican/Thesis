@@ -4,26 +4,6 @@ import torch.nn as nn
 import torchvision
 from torchvision.models import mobilenet_v3_large, mobilenet_v3_small, MobileNet_V3_Large_Weights as weights_large, MobileNet_V3_Small_Weights as weights_small
 
-import sys
-
-sys.path.append("/Users/leo/Desktop/Thesis/utils/")
-sys.path.append("/Users/leo/Desktop/Thesis/models/")
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import torch
-import torch.nn as nn
-import torchvision
-from torchvision.models import mobilenet_v3_large, mobilenet_v3_small
-from torchvision.models import MobileNet_V3_Large_Weights as weights_large
-import torchvision.transforms as transforms
-from torchinfo import summary
-from helper_functions import delete_ds_store, plot_metrics, test, train, set_device, mean_std_finder, load_model
-from CBAM import _CBAM
-from config import comet_token, project_name, workspace
-from comet_ml import Experiment
-
 
 class MBNV3Creator(nn.Module):
 
@@ -67,6 +47,7 @@ class MBNV3Creator(nn.Module):
                 pass
         
         self.layers = se_layers
+        print(f"SE layers: {se_layers}")
         return se_layers
     
     def insert_modules(self):
@@ -126,10 +107,3 @@ class MBNV3Creator(nn.Module):
         self.set_grad()
         
         return self.model
-    
-if __name__ == "__main__":
-    model = MBNV3Creator(mobilenet_v3_small, 10, weights_small.DEFAULT, "mps", module = _CBAM)
-    model.build()
-
-
-
