@@ -49,9 +49,4 @@ class _CBAM(nn.Module):
         x = self.ca(x)
         y = x * self.sa(x)
 
-        #check if skip connection is possible
-        if x.shape == y.shape:
-            y = x + y
-        else:
-            pass
         return y

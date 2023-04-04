@@ -316,78 +316,77 @@ def delete_ds_store(root_path):
                 file_path = os.path.join(subdir, file)
                 os.remove(file_path)
 
-def copy_folder(src_path, dst_path):
-    try:
-        shutil.rmtree(dst_path)
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        print(f"Error deleting {dst_path}: {e}")
-        return
+import os
+import shutil
+from glob import glob
 
-    try:
-        shutil.copytree(src_path, dst_path)
-        print(f"Successfully copied {src_path} to {dst_path}")
-    except Exception as e:
-        print(f"Error copying {src_path} to {dst_path}: {e}")
+def find_top_classes(input_folder, output_folder, n):
+    class_counts = []
+    
+    for class_name in os.listdir(input_folder):
+        class_path = os.path.join(input_folder, class_name)
+        if os.path.isdir(class_path):
+            image_count = len(glob(os.path.join(class_path, '*.jpg'))) + len(glob(os.path.join(class_path, '*.png')))
+            class_counts.append((class_name, image_count))
 
-def split_data_into_train_val_test(data_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
-    # create train, val, and test directories
-    train_dir = os.path.join(data_dir, "train")
-    val_dir = os.path.join(data_dir, "val")
-    test_dir = os.path.join(data_dir, "test")
-    os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(val_dir, exist_ok=True)
-    os.makedirs(test_dir, exist_ok=True)
+    class_counts.sort(key=lambda x: x[1], reverse=True)
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    # loop over all class folders in data_dir
-    for class_folder in os.listdir(data_dir):
-        if not os.path.isdir(os.path.join(data_dir, class_folder)):
+    for class_name, _ in class_counts[:n]:
+        src = os.path.join(input_folder, class_name)
+        dst = os.path.join(output_folder, class_name)
+        shutil.copytree(src, dst)
+
+def create_class_folders(output_folder, class_name, train_folder, val_folder, test_folder):
+    for folder in [train_folder, val_folder, test_folder]:
+        class_path = os.path.join(folder, class_name)
+        if not os.path.exists(class_path):
+            os.makedirs(class_path)
+
+def split_images(output_folder, ratios):
+    train_ratio, val_ratio, test_ratio = ratios
+    assert train_ratio + val_ratio + test_ratio == 1, "Ratios must sum to 1"
+    
+    train_folder = os.path.join(output_folder, 'train')
+    val_folder = os.path.join(output_folder, 'val')
+    test_folder = os.path.join(output_folder, 'test')
+    
+    for folder in [train_folder, val_folder, test_folder]:
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            
+    for class_name in os.listdir(output_folder):
+        if class_name in ['train', 'val', 'test']:
             continue
 
-        # create class subdirectories in train, val, and test directories
-        train_class_dir = os.path.join(train_dir, class_folder)
-        val_class_dir = os.path.join(val_dir, class_folder)
-        test_class_dir = os.path.join(test_dir, class_folder)
-        os.makedirs(train_class_dir, exist_ok=True)
-        os.makedirs(val_class_dir, exist_ok=True)
-        os.makedirs(test_class_dir, exist_ok=True)
+        create_class_folders(output_folder, class_name, train_folder, val_folder, test_folder)
 
-        # get list of all image files for this class
-        class_images = [f for f in os.listdir(os.path.join(data_dir, class_folder)) if os.path.isfile(os.path.join(data_dir, class_folder, f))]
-        num_images = len(class_images)
-        num_train_images = int(num_images * train_ratio)
-        num_val_images = int(num_images * val_ratio)
-        num_test_images = num_images - num_train_images - num_val_images
+        class_folder = os.path.join(output_folder, class_name)
+        images = glob(os.path.join(class_folder, '*.jpg')) + glob(os.path.join(class_folder, '*.png'))
+        
+        train_end = int(len(images) * train_ratio)
+        val_end = train_end + int(len(images) * val_ratio)
 
-        # randomly shuffle image files
-        random.shuffle(class_images)
+        for image_path in images[:train_end]:
+            shutil.move(image_path, os.path.join(train_folder, class_name))
+        
+        for image_path in images[train_end:val_end]:
+            shutil.move(image_path, os.path.join(val_folder, class_name))
+            
+        for image_path in images[val_end:]:
+            shutil.move(image_path, os.path.join(test_folder, class_name))
 
-        # move images to train, val, and test directories
-        for i in range(num_train_images):
-            src_path = os.path.join(data_dir, class_folder, class_images[i])
-            dest_path = os.path.join(train_class_dir, class_images[i])
-            if os.path.isdir(src_path):
-                shutil.copytree(src_path, dest_path)
-                shutil.rmtree(src_path)
-            else:
-                shutil.copy(src_path, dest_path)
-                os.remove(src_path)
-        for i in range(num_train_images, num_train_images+num_val_images):
-            src_path = os.path.join(data_dir, class_folder, class_images[i])
-            dest_path = os.path.join(val_class_dir, class_images[i])
-            if os.path.isdir(src_path):
-                shutil.copytree(src_path, dest_path)
-                shutil.rmtree(src_path)
-            else:
-                shutil.copy(src_path, dest_path)
-                os.remove(src_path)
-        for i in range(num_train_images+num_val_images, num_images):
-            src_path = os.path.join(data_dir, class_folder, class_images[i])
-            dest_path = os.path.join(test_class_dir, class_images[i])
-            if os.path.isdir(src_path):
-                shutil.copytree(src_path, dest_path)
-                shutil.rmtree(src_path)
-            else:
-                shutil.copy(src_path, dest_path)
-                os.remove(src_path)
+        os.rmdir(class_folder)
+
+if __name__ == "__main__":
+
+    # Example usage:
+    input_folder = 'data/VGG-Face2/data/train'
+    output_folder = 'data/vgg_10'
+    n = 10
+    find_top_classes(input_folder, output_folder, n)
+
+    ratios = [0.8, 0.1, 0.1]
+    split_images(output_folder, ratios)

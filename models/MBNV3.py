@@ -1,234 +1,119 @@
-#MobileNet V3 Model
-import sys
-sys.path.append('/Users/leo/Desktop/Thesis/utils')
 import torch
+import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
-import functions as f
+import torchvision
+from torchvision.models import mobilenet_v3_large, mobilenet_v3_small, MobileNet_V3_Large_Weights as weights_large, MobileNet_V3_Small_Weights as weights_small
 
-#defining hswift and hsigmoid activation functions
-class h_sigmoid(nn.Module):
-    def __init__(self, inplace=True): 
-        super(h_sigmoid, self).__init__() 
-        self.relu = nn.ReLU6(inplace=inplace)
 
-    def forward(self, x):
-        return self.relu(x + 3) / 6 #defining the hard sigmoid activation function
+class MBNV3Creator(nn.Module):
 
-class h_swish(nn.Module):
-    def __init__(self, inplace=True):
-        super(h_swish, self).__init__()
-        self.sigmoid = h_sigmoid(inplace=inplace)
+    """_summary_: This class is used to create a MobileNetV3 model 
+    with a custom Squeeze and Excitation block or a custom module.
+    """
+    def __init__(self, model, num_classes, weights, device, module = None, manual_block_insertion = None):
+        super().__init__()
+        self.model = model(weights = weights)
+        self.weights = weights
+        self.model.classifier[-1] = nn.Linear(self.model.classifier[-1].in_features, num_classes, bias=True).apply(self._weights_init)
+        self.module = module
+        self.device = device
+        self.layers = None
+        self.model_variant = "small" if "small" in str(model) else "large"
 
-    def forward(self, x):
-        return x * self.sigmoid(x) #defining the hard swish activation function
-                                    #using the hard sigmoid function
+    # Initialize the weights of the inserted module layers or the SE block
+    def _weights_init(self, m):
+        torch.manual_seed(42)
+        if isinstance(m, nn.Conv2d):
+            torch.nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d):
+            m.weight.data.fill_(1)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.Linear):
+            n = m.weight.size(1)
+            m.weight.data.normal_(0, 0.01)
 
-#defining the squeeze and excitation block
-class SqueezeBlock(nn.Module): #defining the squeeze and excitation block
-    def __init__(self, exp_size, divide=4):
-        super(SqueezeBlock, self).__init__()
-        self.flatten = nn.AdaptiveAvgPool2d(1) #reducing the dimensionality
-        self.dense = nn.Sequential(
-            nn.Linear(exp_size, exp_size // divide), #excitation block
-            nn.ReLU(inplace=True),
-            nn.Linear(exp_size // divide, exp_size), #bringing back the dimensionality
-            h_sigmoid() #using the hard sigmoid activation function
-        )
-
-    def forward(self, x):
-        batch, channels, height, width = x.size()
-        out = self.flatten(x).view(batch, -1)
-        out = self.dense(out) 
-        out = out.view(batch, channels, 1, 1) 
-
-        return out * x
-
-#defining the residual block
-class InvertedResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernal_size, stride, NL, SE, exp_size):
-        super(InvertedResidualBlock, self).__init__()
-        self.out_channels = out_channels
-        self.NL = NL
-        self.SE = SE
-        padding = (kernal_size - 1) // 2 #padding to maintain the dimensionality
-
-        self.use_connect = stride == 1 and in_channels == out_channels #using the residual connection 
-                                                                        #if the stride is 1 and the input
-                                                                        # and output channels are the same
-
-        if self.NL == 'HS':
-            activation = h_swish #using the hard swish activation function
-        else:
-            activation = nn.ReLU #using the relu activation function
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, exp_size, kernel_size=1, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(exp_size),
-            activation(inplace=True)
-        )
-        self.depth_conv = nn.Sequential(
-            nn.Conv2d(exp_size, exp_size, kernel_size=kernal_size, stride=stride, padding=padding, groups=exp_size),
-            nn.BatchNorm2d(exp_size),
-        )
-
-        if self.SE:
-            self.squeeze_block = SqueezeBlock(exp_size)
-
-        self.point_conv = nn.Sequential(
-            nn.Conv2d(exp_size, out_channels, kernel_size=1, stride=1, padding=0), #pointwise convolution
-            nn.BatchNorm2d(out_channels), #batch normalization
-            activation(inplace=True) #activation function
-        )
-
-    def forward(self, x):
-        # MobileNetV3 residual block
-        out = self.conv(x) 
-        out = self.depth_conv(out)
-
-        if self.SE:
-            out = self.squeeze_block(out)
-
-        out = self.point_conv(out)
-
-        if self.use_connect:
-            return x + out
-        else:
-            return out
-
+    def define_layers_insertion(self):
+        """_summary_: This function is used to define all the possible layers where the custom module
+        or the SE block will be inserted.
+        """
+        se_layers = []
+        for i in range (len(self.model.features)):
+            try:
+                if type(self.model.features[i].block[1]) == torchvision.ops.misc.SqueezeExcitation or \
+                    type(self.model.features[i].block[2]) == torchvision.ops.misc.SqueezeExcitation:
+                    se_layers.append(i)
+            except:
+                pass
+        
+        self.layers = se_layers
+        print(f"SE layers: {se_layers}")
+        return se_layers
     
-#defining the MobileNetV3 model
-class MobileNetV3(nn.Module):
-    def __init__(self, mode, num_classes=10, mu=1.0, dropout=0.2):
-        super(MobileNetV3, self).__init__()
-        self.num_classes = num_classes
+    def insert_modules(self):
+        """_summary_: This function is used to change the SE block with the custom module.
+        """
 
-        if mode == 'small':
-            self.cfg = [
-                #in, out, k, s, nl, se,  exp
-                [16, 16, 3, 2, "RE", True, 16],
-                [16, 24, 3, 2, "RE", False, 72],
-                [24, 24, 3, 1, "RE", False, 88],
-                [24, 40, 5, 2, "RE", True, 96],
-                [40, 40, 5, 1, "RE", True, 240],
-                [40, 40, 5, 1, "RE", True, 240],
-                [40, 48, 5, 1, "HS", True, 120],
-                [48, 48, 5, 1, "HS", True, 144],
-                [48, 96, 5, 2, "HS", True, 288],
-                [96, 96, 5, 1, "HS", True, 576],
-                [96, 96, 5, 1, "HS", True, 576],
-            ]
+        if self.model_variant == "small" and self.layers[0] == 1:
+            prev_out_channels = self.model.features[1].block[0].out_channels
+            self.model.features[1].block[1] = self.module(prev_out_channels) if self.module != None else self.model.features[1].block[1]
+            self.model.features[1].block[1].apply(self._weights_init)
 
-            first_conv_out = f._make_divisible(16 * mu)
+            for i in self.layers[1:]:
+                prev_out_channels = self.model.features[i].block[0].out_channels
+                self.model.features[i].block[2] = self.module(prev_out_channels) if self.module != None else self.model.features[i].block[2]
+                self.model.features[i].block[2].apply(self._weights_init)
+        else:
+            for i in self.layers:
+                prev_out_channels = self.model.features[i].block[0].out_channels
+                self.model.features[i].block[2] = self.module(prev_out_channels) if self.module != None else self.model.features[i].block[2]
+                self.model.features[i].block[2].apply(self._weights_init)
 
-            self.first_conv = nn.Sequential(
-                nn.Conv2d(3, first_conv_out, kernel_size=3, stride=2, padding=1, bias=False),
-                nn.BatchNorm2d(first_conv_out),
-                h_swish(inplace=True)
-            )
+        print(f"{self.module if self.module != None else 'SE'} inserted in the following layers: {self.layers}")
+        print(f"Weights initialized for {self.module if self.module != None else 'SE'} inserted in the following layers: {self.layers} as well as the last layer.")
+        return self.model
+    
+    def set_grad(self):
+        """_summary_: This function is used to set the gradient of the inserted module layers or the SE block.
+        """
+        #set all grads in the model to false
+        for param in self.model.parameters():
+            param.requires_grad = False
 
-            self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
-                in_channels = f._make_divisible(in_channels * mu)
-                out_channels = f._make_divisible(out_channels * mu)
-                exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE, exp_size))
-            self.layers = nn.Sequential(*self.layers)
+        #set the grad of the last layer to true
+        for param in self.model.classifier[-1].parameters():
+            param.requires_grad = True
 
-            conv1_in = f._make_divisible(96 * mu) # making the input channels divisible
-            conv1_out = f._make_divisible(576 * mu) # making the output channels divisible
-            self.out_conv1 = nn.Sequential(
-                nn.Conv2d(conv1_in, conv1_out, kernel_size=3, stride=1, padding=1, groups=conv1_in),
-                SqueezeBlock(conv1_out),
-                nn.BatchNorm2d(conv1_out),
-                h_swish(inplace=True))
+        if self.model_variant == "small":
+            for param in self.model.features[1].block[1].parameters():
+                param.requires_grad = True
 
-            conv_2_in = f._make_divisible(576 * mu) # making the output channels divisible
-            conv_2_out = f._make_divisible(1280 * mu) # making the output channels divisible
-            self.out_conv2 = nn.Sequential(
-                nn.Conv2d(conv_2_in, conv_2_out, kernel_size=1, stride=1, padding=0),
-                h_swish(inplace=True)
-            )
+        for i in self.layers:
+            for param in self.model.features[i].block[2].parameters():
+                param.requires_grad = True
 
-            conv_3_in = f._make_divisible(1280 * mu) # making the output channels divisible
-            self.out_conv3 = nn.Sequential(
-                nn.Conv2d(conv_3_in, self.num_classes, kernel_size=1, stride=1, padding=0)
-            )
+        print(f"Grads set to True for {self.layers} and the last layer. (False for the rest)")
 
-        elif mode == 'large':
-            self.cfg = [
-                #in, out, k, s, nl, se,  exp
-                [16, 16, 3, 1, "RE", False, 16],
-                [16, 24, 3, 2, "RE", False, 64],
-                [24, 24, 3, 1, "RE", False, 72],
-                [24, 40, 5, 2, "RE", True, 72],
-                [40, 40, 5, 1, "RE", True, 120],
-                [40, 40, 5, 1, "RE", True, 120],
-                [40, 80, 3, 2, "HS", False, 240],
-                [80, 80, 3, 1, "HS", False, 200],
-                [80, 80, 3, 1, "HS", False, 184],
-                [80, 80, 3, 1, "HS", False, 184],
-                [80, 112, 3, 1, "HS", True, 480],
-                [112, 112, 3, 1, "HS", True, 672],
-                [112, 160, 5, 2, "HS", True, 672],
-                [160, 160, 5, 1, "HS", True, 672],
-                [160, 160, 5, 1, "HS", True, 960],
-            ]
+        return self.model
+    
+    def build(self, manual_block_insertion:list = None, ):
+        """_summary_: This function is used to build the model.
+        """
 
-            first_conv_out = f._make_divisible(16 * mu)
-            self.first_conv = nn.Sequential(
-                nn.Conv2d(3, first_conv_out, kernel_size=3, stride=2, padding=1, bias=False),
-                nn.BatchNorm2d(first_conv_out),
-                h_swish(inplace=True)
-            )
+        #check if the manual_block_insertion is not None
+        if manual_block_insertion != None:
+            #if yes, set the se.layers to the manual_block_insertion
+            self.layers = manual_block_insertion
+        else:
+            #if not, define the layers where the SE block will be inserted
+            self.define_layers_insertion()
+        #insert the custom module
+        self.insert_modules()
 
-            self.layers = []
-            for i, (in_channels, out_channels, kernal_size, stride, NL, SE, exp_size) in enumerate(self.cfg):
-                in_channels = f._make_divisible(in_channels * mu)
-                out_channels = f._make_divisible(out_channels * mu)
-                exp_size = f._make_divisible(exp_size * mu)
-                self.layers.append(InvertedResidualBlock(in_channels, out_channels, kernal_size, stride, NL, SE, exp_size))
-            self.layers = nn.Sequential(*self.layers)
+        #freeze and unfreeze the weights if weights are provided if not it means that we need to train the entire model
+        if self.weights != None:
+            self.set_grad()
 
-            conv1_in = f._make_divisible(160 * mu) # making the input channels divisible
-            conv1_out = f._make_divisible(960 * mu) # making the output channels divisible
-            self.out_conv1 = nn.Sequential(
-                nn.Conv2d(conv1_in, conv1_out, kernel_size=3, stride=1, padding=1, groups=conv1_in),
-                SqueezeBlock(conv1_out),
-                nn.BatchNorm2d(conv1_out),
-                h_swish(inplace=True))
+        return self.model
 
-            nn.AdaptiveAvgPool1d(output_size=1)
-            conv_2_in = f._make_divisible(960 * mu) # making the output channels divisible
-            conv_2_out = f._make_divisible(1280 * mu) # making the output channels divisible
-            self.out_conv2 = nn.Sequential(
-                nn.Conv2d(conv_2_in, conv_2_out, kernel_size=1, stride=1, padding=0),
-                h_swish(inplace=True)
-            )
-
-            conv_3_in = f._make_divisible(1280 * mu) # making the output channels divisible
-            self.out_conv3 = nn.Sequential(
-                nn.Conv2d(conv_3_in, self.num_classes, kernel_size=1, stride=1, padding=0)
-            )
-            #fc = nn.Linear(1280, num_classes)
-
-        self.apply(f._weights_init)
-
-    def forward(self, x):
-        x = self.first_conv(x)
-        x = self.layers(x)
-        x = self.out_conv1(x)
-        x = self.out_conv2(x)
-        x = self.out_conv3(x)
-        #x = x.view(x.size(0), -1)
-        return x
-
-if __name__ == '__main__':
-    model = MobileNetV3(mode='small', num_classes=10)
-    print(model)
-    x = torch.randn(1, 3, 224, 224)
-    y = model(x)
-    print(y.size())
-
-    flops = f.count_flops(model, x.shape)
-    print(f)
