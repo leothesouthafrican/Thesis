@@ -1,4 +1,5 @@
 env/
+thesis_env/
 .DS_Store
 config.py
 __pycache__/

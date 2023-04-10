@@ -254,6 +254,8 @@ def test(model, test_loader, criterion, hyper_params, experiment = False):
         #send inputs and labels to device
         inputs = inputs.to(hyper_params["device"])
         labels = labels.to(hyper_params["device"])
+        #model to device
+        model = model.to(hyper_params["device"])
         #forward pass
         outputs = model(inputs)
         #calculate loss
@@ -384,8 +386,8 @@ if __name__ == "__main__":
 
     # Example usage:
     input_folder = 'data/VGG-Face2/data/train'
-    output_folder = 'data/vgg_10'
-    n = 10
+    output_folder = 'data/vgg_50'
+    n = 50
     find_top_classes(input_folder, output_folder, n)
 
     ratios = [0.8, 0.1, 0.1]

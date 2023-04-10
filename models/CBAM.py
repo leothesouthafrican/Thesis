@@ -46,7 +46,7 @@ class _CBAM(nn.Module):
         self.sa = SpatialAttention()
 
     def forward(self, x):
-        x = self.ca(x)
-        y = x * self.sa(x)
+        f_prime = self.ca(x) * x
+        f_double_prime = self.sa(f_prime) * f_prime
 
-        return y
+        return f_double_prime

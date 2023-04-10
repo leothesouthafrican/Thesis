@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+
 from pytorch_grad_cam import GradCAM
 import os
 from PIL import Image
@@ -83,4 +83,5 @@ class VisualizeAttention:
             image_array = self.image_to_numpy_array()
             grayscale_cam = self.attention_map()
             self.cam = self.image_map_overlay(image_array, grayscale_cam)
+
 
