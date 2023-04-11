@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import random
+from image_attention_vis import VisualizeAttention
 
 #setting the seed for reproducibility
 torch.manual_seed(42)
@@ -123,7 +123,7 @@ def calculate_accuracy(y_pred, y):
     return acc
 
 #train the model
-def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, verbose = 0, experiment = False):
+def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper_params, verbose = 0, test_transform = None, experiment = False):
 
     #log hyperparameters
     experiment.log_parameters({key: val for key, val in hyper_params.items() if key != "model"}) if experiment else None
@@ -178,11 +178,14 @@ def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, v
         train_losses.append(epoch_loss)
         train_acc.append(epoch_acc)
         #validate model
-        val_loss, vall_acc = validate(model, val_loader, criterion, hyper_params, verbose = verbose)
+        val_loss, vall_acc = validate(model, val_loader, criterion, hyper_params, verbose = verbose, test_transform = test_transform, experiment = experiment)
 
         #append metrics to lists
         val_losses.append(val_loss)
         val_acc.append(vall_acc)
+
+        #change the learning rate
+        scheduler.step(val_loss)
 
         end_time = time.time() # end time of the epoch
         epoch_mins, epoch_secs, epoch_ms = epoch_step_time(start_time, end_time)
@@ -211,7 +214,10 @@ def train(model, train_loader, val_loader, criterion, optimizer, hyper_params, v
     return train_losses, train_acc, val_losses, val_acc
 
 #validate the model
-def validate(model, val_loader, criterion, hyper_params, verbose):
+def validate(model, val_loader, criterion, hyper_params, verbose, test_transform = None, experiment = False):
+
+    attention = VisualizeAttention(model, path = "/Users/leo/Desktop/Thesis/data/att_viz_test",target_layer = -1, hyper_params = hyper_params, transform = test_transform, experiment = experiment)
+
     #set model to evaluation mode
     model.eval()
     #initialise variables to store metrics
@@ -233,6 +239,10 @@ def validate(model, val_loader, criterion, hyper_params, verbose):
     #calculate epoch loss and accuracy
     epoch_loss = running_loss / len(val_loader.dataset)
     epoch_acc = running_corrects.float() / len(val_loader.dataset)
+
+    #log images to comet_ml
+    attention.log_images() if experiment else None
+        
     #return metrics
     return epoch_loss, epoch_acc
 
@@ -292,7 +302,6 @@ def test(model, test_loader, criterion, hyper_params, experiment = False):
 
     #return metrics
     return epoch_loss, epoch_acc
-
 
 #plot metrics
 def plot_metrics(train_losses, train_acc, val_losses, val_acc):

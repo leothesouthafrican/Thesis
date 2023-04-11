@@ -18,6 +18,7 @@ class VisualizeAttention:
         
         if os.path.isfile(path):
             self.image_path = path
+            print(f"found file")
         elif os.path.isdir(path):
             self.image_path = None
         else:

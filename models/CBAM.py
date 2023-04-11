@@ -19,14 +19,14 @@ class ChannelAttention(nn.Module):
     def forward(self, x):
         avg_out = self.sharedMLP(self.avg_pool(x))
         max_out = self.sharedMLP(self.max_pool(x))
-        out = avg_out + max_out
-        out = self.sigmoid(out)
-        return x * out
+        channel_attention_scale = self.sigmoid(avg_out + max_out)
+
+        return channel_attention_scale * x
     
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super().__init__()
-        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        assert kernel_size in (3, 7), f'kernel size must be 3 or 7 but got {kernel_size}'
         padding = 3 if kernel_size == 7 else 1
         self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
         self.sigmoid = nn.Sigmoid()
@@ -34,10 +34,10 @@ class SpatialAttention(nn.Module):
     def forward(self, x):
         avg_out = torch.mean(x, dim=1, keepdim=True)
         max_out, _ = torch.max(x, dim=1, keepdim=True)
-        x = torch.cat([avg_out, max_out], dim=1)
-        x = self.conv(x)
-
-        return self.sigmoid(x)
+        concat = torch.cat([avg_out, max_out], dim=1)
+        conv = self.conv(concat)
+        spatial_attention_scale = self.sigmoid(conv)
+        return spatial_attention_scale * x
     
 class _CBAM(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
@@ -46,7 +46,7 @@ class _CBAM(nn.Module):
         self.sa = SpatialAttention()
 
     def forward(self, x):
-        f_prime = self.ca(x) * x
-        f_double_prime = self.sa(f_prime) * f_prime
+        f_prime = self.ca(x)
+        f_double_prime = self.sa(f_prime)
 
         return f_double_prime

@@ -13,7 +13,6 @@ class MBNV3Creator(nn.Module):
     def __init__(self, model, num_classes, weights, device, module = None, manual_block_insertion = None):
         super().__init__()
         self.model = model(weights = weights)
-        self.weights = weights
         self.model.classifier[-1] = nn.Linear(self.model.classifier[-1].in_features, num_classes, bias=True).apply(self._weights_init)
         self.module = module
         self.device = device
@@ -100,20 +99,11 @@ class MBNV3Creator(nn.Module):
     def build(self, manual_block_insertion:list = None, ):
         """_summary_: This function is used to build the model.
         """
-
-        #check if the manual_block_insertion is not None
         if manual_block_insertion != None:
-            #if yes, set the se.layers to the manual_block_insertion
             self.layers = manual_block_insertion
         else:
-            #if not, define the layers where the SE block will be inserted
             self.define_layers_insertion()
-        #insert the custom module
         self.insert_modules()
-
-        #freeze and unfreeze the weights if weights are provided if not it means that we need to train the entire model
-        if self.weights != None:
-            self.set_grad()
-
+        self.set_grad()
+        
         return self.model
-
