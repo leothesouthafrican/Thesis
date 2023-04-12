@@ -74,7 +74,7 @@ class MBNV3Creator(nn.Module):
         return self.model
     
     def set_grad(self):
-        """_summary_: This function is used to set the gradient of the inserted module layers or the SE block.
+        """_summary_: This function is used to set the gradient (requires grad) of the inserted module layers or the SE block.
         """
         #set all grads in the model to false
         for param in self.model.parameters():
@@ -96,7 +96,7 @@ class MBNV3Creator(nn.Module):
 
         return self.model
     
-    def build(self, manual_block_insertion:list = None, ):
+    def build(self, manual_block_insertion:list = None, set_all_trainable:bool = False):
         """_summary_: This function is used to build the model.
         """
         if manual_block_insertion != None:
@@ -105,5 +105,8 @@ class MBNV3Creator(nn.Module):
             self.define_layers_insertion()
         self.insert_modules()
         self.set_grad()
+        if set_all_trainable:
+            for param in self.model.parameters():
+                param.requires_grad = True
         
         return self.model

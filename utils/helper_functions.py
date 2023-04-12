@@ -13,6 +13,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from image_attention_vis import VisualizeAttention
+from PIL import Image
 
 #setting the seed for reproducibility
 torch.manual_seed(42)
@@ -37,6 +38,13 @@ def set_device():
     return device
 
 def load_model(model, path):
+    """_summary_: This function is used to load the model (state_dict) from the path if it exists/specified.
+        Args:
+            model: the model to be loaded
+            path: the path where the model is saved
+        Returns:
+            model: the loaded model
+    """
     # Load the state dict
     state_dict = torch.load(path)
 
@@ -71,10 +79,18 @@ def _weights_init(m):
         #m.bias.data.zero_()
 
 def mean_std_finder(data_path):
+    """
+    This function calculates the mean and standard deviation of images in the specified data path.
     
+    Args:
+        data_path (str): The path to the folder containing images.
+
+    Returns:
+        tuple: A tuple containing the mean and standard deviation of the images.
+    """
     transform_img = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(256),
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
     ])
 
@@ -319,85 +335,67 @@ def plot_metrics(train_losses, train_acc, val_losses, val_acc):
     plt.legend(frameon=False)
     plt.show()
 
-# Delete .DS_Store files
-def delete_ds_store(root_path):
-    for subdir, dirs, files in os.walk(root_path):
-        for file in files:
-            if file.endswith('.DS_Store'):
-                file_path = os.path.join(subdir, file)
-                os.remove(file_path)
 
 import os
 import shutil
-from glob import glob
+import numpy as np
+from PIL import Image
+from sklearn.model_selection import train_test_split
 
-def find_top_classes(input_folder, output_folder, n):
-    class_counts = []
-    
-    for class_name in os.listdir(input_folder):
-        class_path = os.path.join(input_folder, class_name)
-        if os.path.isdir(class_path):
-            image_count = len(glob(os.path.join(class_path, '*.jpg'))) + len(glob(os.path.join(class_path, '*.png')))
-            class_counts.append((class_name, image_count))
+def process_images(input_path, output_path, n, split_ratio):
+    # Step 1
+    class_folders = [f for f in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, f))]
+    class_folders = sorted(class_folders, key=lambda x: len(os.listdir(os.path.join(input_path, x))), reverse=True)[:n]
 
-    class_counts.sort(key=lambda x: x[1], reverse=True)
-    
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    # Step 2
+    avg_dimensions = {}
+    for folder in class_folders:
+        images = [f for f in os.listdir(os.path.join(input_path, folder)) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        dimensions = []
+        for img in images:
+            im = Image.open(os.path.join(input_path, folder, img))
+            dimensions.append(im.size)
+        avg_dimensions[folder] = np.mean(dimensions, axis=0)
+        print(f'{folder}: {avg_dimensions[folder]}')
 
-    for class_name, _ in class_counts[:n]:
-        src = os.path.join(input_folder, class_name)
-        dst = os.path.join(output_folder, class_name)
-        shutil.copytree(src, dst)
+    # Step 3
+    moved_counts = {}
+    for folder in class_folders:
+        os.makedirs(os.path.join(output_path, folder), exist_ok=True)
+        images = [f for f in os.listdir(os.path.join(input_path, folder)) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        dimensions = [Image.open(os.path.join(input_path, folder, img)).size for img in images]
+        std_dev = np.std(dimensions, axis=0)
+        mean_dim = avg_dimensions[folder]
+        moved, left = 0, 0
+        for img, dim in zip(images, dimensions):
+            if (dim[0] > mean_dim[0] - std_dev[0]) and (dim[1] > mean_dim[1] - std_dev[1]):
+                shutil.copy(os.path.join(input_path, folder, img), os.path.join(output_path, folder, img))
+                moved += 1
+            else:
+                left += 1
+        moved_counts[folder] = (moved, left)
+        print(f'{folder}: {moved} moved, {left} left behind')
 
-def create_class_folders(output_folder, class_name, train_folder, val_folder, test_folder):
-    for folder in [train_folder, val_folder, test_folder]:
-        class_path = os.path.join(folder, class_name)
-        if not os.path.exists(class_path):
-            os.makedirs(class_path)
-
-def split_images(output_folder, ratios):
-    train_ratio, val_ratio, test_ratio = ratios
-    assert train_ratio + val_ratio + test_ratio == 1, "Ratios must sum to 1"
-    
-    train_folder = os.path.join(output_folder, 'train')
-    val_folder = os.path.join(output_folder, 'val')
-    test_folder = os.path.join(output_folder, 'test')
-    
-    for folder in [train_folder, val_folder, test_folder]:
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-            
-    for class_name in os.listdir(output_folder):
-        if class_name in ['train', 'val', 'test']:
-            continue
-
-        create_class_folders(output_folder, class_name, train_folder, val_folder, test_folder)
-
-        class_folder = os.path.join(output_folder, class_name)
-        images = glob(os.path.join(class_folder, '*.jpg')) + glob(os.path.join(class_folder, '*.png'))
+    # Step 4
+    for folder in class_folders:
+        images = [f for f in os.listdir(os.path.join(output_path, folder)) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        train_images, test_images = train_test_split(images, test_size=split_ratio[2], random_state=42)
+        train_images, val_images = train_test_split(train_images, test_size=split_ratio[1] / (split_ratio[0] + split_ratio[1]), random_state=42)
         
-        train_end = int(len(images) * train_ratio)
-        val_end = train_end + int(len(images) * val_ratio)
+        for img_type, img_list in zip(['train', 'val', 'test'], [train_images, val_images, test_images]):
+            os.makedirs(os.path.join(output_path, img_type, folder), exist_ok=True)
+            for img in img_list:
+                shutil.move(os.path.join(output_path, folder, img), os.path.join(output_path, img_type, folder, img))
 
-        for image_path in images[:train_end]:
-            shutil.move(image_path, os.path.join(train_folder, class_name))
-        
-        for image_path in images[train_end:val_end]:
-            shutil.move(image_path, os.path.join(val_folder, class_name))
-            
-        for image_path in images[val_end:]:
-            shutil.move(image_path, os.path.join(test_folder, class_name))
+    # Step 5
+    for folder in class_folders:
+        shutil.rmtree(os.path.join(output_path, folder))
 
-        os.rmdir(class_folder)
+# Example usage:
+if __name__ == '__main__':
+    input_path = '/Users/leo/Desktop/Thesis/data/VGG-Face2/data/train/'
+    output_path = '/Users/leo/Desktop/Thesis/data/vgg_10/'
+    n = 10
+    split_ratio = [0.8, 0.1, 0.1]
+    process_images(input_path, output_path, n, split_ratio)
 
-if __name__ == "__main__":
-
-    # Example usage:
-    input_folder = 'data/VGG-Face2/data/train'
-    output_folder = 'data/vgg_50'
-    n = 50
-    find_top_classes(input_folder, output_folder, n)
-
-    ratios = [0.8, 0.1, 0.1]
-    split_images(output_folder, ratios)

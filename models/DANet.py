@@ -49,9 +49,6 @@ class SAM(nn.Module):
         #Get the output
         out = self.alpha * out #batch_size, C, H, W -> (1, 64, 32, 32)
 
-        #Add the original input
-        out = out + x #batch_size, C, H, W -> (1, 64, 32, 32)
-
         return out
     
 #Part 2: The Channel Attention Module
@@ -91,9 +88,6 @@ class CAM(nn.Module):
 
         #Get the output
         out = self.beta * out #batch_size, C, H, W -> (1, 3, 3, 3)
-
-        #Add the original input
-        out = out + x #batch_size, C, H, W -> (1, 3, 3, 3)
 
         return out
 

@@ -24,7 +24,7 @@ class ChannelAttention(nn.Module):
         return channel_attention_scale * x
     
 class SpatialAttention(nn.Module):
-    def __init__(self, kernel_size=7):
+    def __init__(self,in_channels, kernel_size=7):
         super().__init__()
         assert kernel_size in (3, 7), f'kernel size must be 3 or 7 but got {kernel_size}'
         padding = 3 if kernel_size == 7 else 1
@@ -37,6 +37,7 @@ class SpatialAttention(nn.Module):
         concat = torch.cat([avg_out, max_out], dim=1)
         conv = self.conv(concat)
         spatial_attention_scale = self.sigmoid(conv)
+
         return spatial_attention_scale * x
     
 class _CBAM(nn.Module):
