@@ -89,6 +89,8 @@ class CAM(nn.Module):
         #Get the output
         out = self.beta * out #batch_size, C, H, W -> (1, 3, 3, 3)
 
+        out = out + x #batch_size, C, H, W -> (1, 3, 3, 3)
+
         return out
 
 #Part 3: The DANet Module
@@ -101,14 +103,4 @@ class _DANet(nn.Module):
     def forward(self, x):
         out = self.sam(x) + self.cam(x)
         return out
-
-
-
-
-
-
-
-
-
-
 

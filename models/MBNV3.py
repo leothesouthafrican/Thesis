@@ -47,7 +47,6 @@ class MBNV3Creator(nn.Module):
                 pass
         
         self.layers = se_layers
-        print(f"SE layers: {se_layers}")
         return se_layers
     
     def insert_modules(self):
