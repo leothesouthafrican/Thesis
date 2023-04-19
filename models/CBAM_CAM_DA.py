@@ -12,7 +12,6 @@ class CAM_from_DANet(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
-
         #Get the batch size
         batch_size, channels, height, width = x.size() #batch_size, C, H, W -> (1, 3, 3, 3
 
@@ -62,8 +61,8 @@ class _CBAM_CAM_DA(nn.Module):
         self.ca = CAM_from_DANet(in_channels)
         self.sa = SpatialAttention()
 
-    def forward(self, x):
-        f_prime = self.ca(x)
+    def forward(self, f):
+        f_prime = self.ca(f) #not multiplying by f, since this happens in the CAM module
         f_double_prime =self.sa(f_prime) * f_prime
         return f_double_prime
     
