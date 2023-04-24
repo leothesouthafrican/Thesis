@@ -173,7 +173,7 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
             #set gradients to zero
             optimizer.zero_grad()
             #forward pass
-            outputs = model(inputs).to(hyper_params["device"])
+            outputs = model(inputs)
             #calculate loss
             loss = criterion(outputs, labels)
             #backpropagate

@@ -8,7 +8,7 @@ class CAM_from_DANet(nn.Module):
     
     def __init__(self, in_channels, **kwargs):
         super(CAM_from_DANet, self).__init__()
-        self.beta = nn.Parameter(torch.zeros(1), requires_grad=True)
+        self.beta = nn.Parameter(torch.tensor(0.01), requires_grad=True)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
@@ -24,7 +24,7 @@ class CAM_from_DANet(nn.Module):
 
         #Get the energy new
         energy_new = torch.max(energy, -1, keepdim=True)[0].expand_as(energy) - energy #batch_size, C, C -> (1, 3, 3) this is the max value of the energy matrix
-        
+
         #Get the attention
         attention = self.softmax(energy_new) #batch_size, C, C -> (1, 3, 3)
 
@@ -37,7 +37,8 @@ class CAM_from_DANet(nn.Module):
         #Get the output
         out = out.view(batch_size, channels, height, width) #batch_size, C, H, W -> (1, 3, 3, 3)
 
-        return self.beta * out #batch_size, C, H, W -> (1, 3, 3, 3)
+        return self.beta * out + x #batch_size, C, H, W -> (1, 3, 3, 3)
+
     
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):

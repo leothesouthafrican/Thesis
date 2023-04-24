@@ -4,10 +4,6 @@ import math
 from SE_weight_module import SqueezeExcitation
 
 def conv(in_channels, out_channels, kernel_size, padding, stride = 1, exp=1, groups=1):
-    print("in_channels: ", in_channels)
-    print("out_channels: ", out_channels)
-
-    print("groups: ", groups)
     return nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride = stride,
                     padding=padding, dilation=1, groups=groups, bias = False)
 
@@ -31,12 +27,11 @@ def find_common_divisors(in_channels, out_channels):
 class SPC(nn.Module):
 
     def __init__(self, in_channels, conv_kernels=[3,5,7,9], stride=1, reduction_rate = 1):
-        super(SPC, self).__init__()
+        super().__init__()
 
         out_channels = in_channels // reduction_rate
 
         conv_groups = find_common_divisors(in_channels, out_channels)
-        print("conv_groups: ", conv_groups)
 
         self.conv_1 = conv(in_channels, out_channels, kernel_size=conv_kernels[0], 
                         padding=(conv_kernels[0]//2), stride = stride, groups=conv_groups[0])
@@ -51,6 +46,7 @@ class SPC(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self,x):
+
         batch_size = x.shape[0]
 
         x1 = self.conv_1(x)
