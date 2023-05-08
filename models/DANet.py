@@ -103,4 +103,3 @@ class _DANet(nn.Module):
     def forward(self, x):
         out = self.sam(x) + self.cam(x)
         return out
-

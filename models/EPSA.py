@@ -3,77 +3,63 @@ import torch.nn as nn
 import math
 from SE_weight_module import SqueezeExcitation
 
-def conv(in_channels, out_channels, kernel_size, padding, stride = 1, exp=1, groups=1):
-    return nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride = stride,
-                    padding=padding, dilation=1, groups=groups, bias = False)
-
-def conv1x1(in_channels, out_channels, stride=1):
-    return nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias = False)
-
-def find_common_divisors(in_channels, out_channels):
-    divisors = []
-
-    for i in range(1, min(in_channels, out_channels) + 1):
-        if in_channels % i == 0 and out_channels % i == 0:
-            divisors.append(i)
-
-    if len(divisors) >= 4:
-        result = [1]
-        result.extend(divisors[-3:])
-        return result
-    else:
-        raise ValueError("Could not find enough divisors to divide in_channels and out_channels.")
-
-class SPC(nn.Module):
-
-    def __init__(self, in_channels, conv_kernels=[3,5,7,9], stride=1, reduction_rate = 1):
+class PSA(nn.Module):
+    def __init__(self, in_channels, out_channels, conv_kernels=[3,5], stride=1):
         super().__init__()
 
-        out_channels = in_channels // reduction_rate
+        self.split_channel = out_channels // len(conv_kernels)
+        self.conv_kernels = conv_kernels
+        self.se = SqueezeExcitation(self.split_channel)
 
-        conv_groups = find_common_divisors(in_channels, out_channels)
+        for i in range(len(conv_kernels)): 
+            setattr(self, f"conv_{i+1}", nn.Conv2d(in_channels, self.split_channel, kernel_size=conv_kernels[i],
+                                    padding=(conv_kernels[i]//2), stride=stride, groups=int(2**((conv_kernels[i]-1)/2))))
 
-        self.conv_1 = conv(in_channels, out_channels, kernel_size=conv_kernels[0], 
-                        padding=(conv_kernels[0]//2), stride = stride, groups=conv_groups[0])
-        self.conv_2 = conv(in_channels, out_channels, kernel_size=conv_kernels[1], padding=(conv_kernels[1]//2),
-                            stride=stride, groups=conv_groups[1])
-        self.conv_3 = conv(in_channels, out_channels, kernel_size=conv_kernels[2], padding=(conv_kernels[2]//2),
-                            stride=stride, groups=conv_groups[2])
-        self.conv_4 = conv(in_channels, out_channels, kernel_size=conv_kernels[3], padding=(conv_kernels[3]//2),
-                            stride=stride, groups=conv_groups[3])
-        self.se = SqueezeExcitation(out_channels)
-        self.split_channel = out_channels
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self,x):
-
+    def forward(self, x):
         batch_size = x.shape[0]
+        # Create a list of output features from each convolutional layer
+        output_features = [getattr(self, f"conv_{i+1}")(x) for i in range(len(self.conv_kernels))]
+        feats = torch.cat(output_features, dim=1)
+        feats = feats.view(batch_size, len(self.conv_kernels), self.split_channel, feats.shape[2], feats.shape[3])
 
-        x1 = self.conv_1(x)
-        x2 = self.conv_2(x)
-        x3 = self.conv_3(x)
-        x4 = self.conv_4(x)
+        x_se = [self.se(x) for x in output_features]
+        x_se = torch.cat(x_se, dim=1)
+        x_se = x_se.view(batch_size, len(self.conv_kernels), self.split_channel, x_se.shape[2], x_se.shape[3])
 
-        feats = torch.cat((x1,x2,x3,x4), dim=1)
-        feats = feats.view(batch_size, 4, self.split_channel, feats.shape[2], feats.shape[3])
+        # Compute the attention weights
+        weights = torch.softmax(x_se, dim=1)
 
-        x1_se = self.se(x1)
-        x2_se = self.se(x2)
-        x3_se = self.se(x3)
-        x4_se = self.se(x4)
+        # Multiply the attention weights with the output features
+        weighted_feats = torch.mul(weights, feats)
 
-        x_se = torch.cat((x1_se, x2_se, x3_se, x4_se), dim=1)
-        attention_vectors = x_se.view(batch_size, 4, self.split_channel, 1, 1)
-        attention_vectors = self.softmax(attention_vectors)
-        feats_weight = feats * attention_vectors
+        return weighted_feats.view(batch_size, -1, weighted_feats.shape[3], weighted_feats.shape[4])
 
-        for i in range(4):
-            x_se_weight_fp = feats_weight[:, i, :, :]
-            if i == 0:
-                out = x_se_weight_fp
-            else:
-                out = torch.cat((x_se_weight_fp, out), 1)
+class PSA_Block(nn.Module):
+    def __init__(self, in_channels, conv_kernels=[3,5], stride=1):
+        super().__init__()
+        self.out_channels = in_channels
+        self.psa = PSA(in_channels, self.out_channels, conv_kernels, stride)
+        self.conv1x1 = nn.Conv2d(self.out_channels, self.out_channels, kernel_size=1, padding=0, stride=1)
+        self.bn = nn.BatchNorm2d(self.out_channels)
+        self.relu = nn.ReLU(inplace=True)
 
-        out = conv1x1(in_channels=4*self.split_channel, out_channels=self.split_channel)(out)
+    def forward(self, x):
+        
+        out = self.conv1x1(x)
+        out = self.bn(out)
+        out = self.relu(out)
+
+        out = self.psa(out)
+        out = self.bn(out)
+        out = self.relu(out)
+
+        out = self.conv1x1(out)
+        out = self.bn(out)
+        out = self.relu(out)
 
         return out
+
+if __name__ == "__main__":
+    x = torch.randn(1, 16, 224, 224)
+    out = PSA_Block(16)
+    out = out(x)

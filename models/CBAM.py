@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 class ChannelAttention(nn.Module):
@@ -51,3 +49,9 @@ class _CBAM(nn.Module):
         f_double_prime = self.sa(f_prime)
 
         return f_double_prime
+    
+if __name__ == '__main__':
+    x = torch.randn(1, 64, 56, 56)
+    cbam = _CBAM(64)
+    y = cbam(x)
+    print(y.shape)
