@@ -232,7 +232,7 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
 #validate the model
 def validate(model, val_loader, criterion, hyper_params, verbose, test_transform = None, experiment = False):
 
-    attention = VisualizeAttention(model, path = "/Users/leo/Desktop/Thesis/data/att_viz_test",target_layer = -1, hyper_params = hyper_params, transform = test_transform, experiment = experiment)
+    attention = VisualizeAttention(model, path = "/Users/leo/Programming/Thesis/data/att_viz_test/ImageNet_100_att/",target_layer = -1, hyper_params = hyper_params, transform = test_transform, experiment = experiment)
 
     #set model to evaluation mode
     model.eval()
@@ -257,7 +257,10 @@ def validate(model, val_loader, criterion, hyper_params, verbose, test_transform
     epoch_acc = running_corrects.float() / len(val_loader.dataset)
 
     #log images to comet_ml
-    attention.log_images() if experiment else None
+    try:
+        attention.log_images() if experiment else None
+    except:
+        print("Error logging images to comet_ml")
         
     #return metrics
     return epoch_loss, epoch_acc
