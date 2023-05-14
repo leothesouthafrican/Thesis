@@ -69,3 +69,12 @@ class MBNV3_Creator(nn.Module):
         self._weights_init()
         self.set_all_parameters_trainable()
         return self.model
+    
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = MBNV3_Creator(num_classes=1000, device=device, module=None)
+    model = model.build_model()
+    print(model.features[-1])
+
+    #print the classifier
+    print(model.classifier)

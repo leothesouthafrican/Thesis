@@ -248,8 +248,8 @@ if __name__ == '__main__':
     x = torch.randn(32, 3, 224, 224)
     net = ghost_net(num_classes=1000, width_mult=1)
 
-    y = net(x)
-    print(y.size())
+    #print the network structure
+    print(net.features[-1])
 
 
 
