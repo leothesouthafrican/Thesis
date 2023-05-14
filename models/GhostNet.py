@@ -243,19 +243,32 @@ def ghost_net(**kwargs):
 
     return GhostNet(cfgs_small, **kwargs)
 
+import torch
+
 if __name__ == '__main__':
     
-    x = torch.randn(32, 3, 224, 224)
-    net = ghost_net(num_classes=1000, width_mult=1)
+    from torchsummary import summary
+    from thop import profile
 
-    # Use torch.profiler.profile() to measure FLOPS
-    with torch.profiler.profile(profile_memory=True, record_shapes=True) as prof:
-        net(x)
+    def measure_flops_and_time(device, model):
+        input_size = (3, 224, 224)
+        model = model.to(device)
+        device_str = str(device)  # Convert torch.device object to string
 
-    # Get the total number of FLOPs and total CPU time
-    total_flops = sum(p.numel() for p in net.parameters() if p.requires_grad)
-    total_time = sum(p.self_cpu_time_total for p in prof.key_averages())
+        input_data = torch.randn(1, *input_size).to(device)
+        
+        # Use thop to get FLOPs and number of parameters
+        flops, params = profile(model, inputs=(input_data, ), verbose=False)
 
-    # Print the results
-    print(f"Total FLOPs: {total_flops:.2f}")
-    print(f"Total CPU time: {total_time:.2f} microseconds")
+        # Print the results
+        print(f"Total FLOPs: {flops}")
+        print(f"Total Parameters: {params}")
+
+        return flops
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model = ghost_net(num_classes=1000, width_mult=1, module_type='ghost')
+
+    flops = measure_flops_and_time(device, model)
+    print(flops)

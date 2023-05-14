@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from image_attention_vis import VisualizeAttention
 from PIL import Image
+from torchsummary import summary
+from thop import profile
 
 #setting the seed for reproducibility
 torch.manual_seed(42)
@@ -138,14 +140,32 @@ def calculate_accuracy(y_pred, y):
     acc = correct.float() / y.shape[0] #calculate the accuracy
     return acc
 
+def measure_flops_and_time(device, model):
+    input_size = (3, 224, 224)
+    model = model.to(device)
+    device_str = str(device)  # Convert torch.device object to string
+
+    input_data = torch.randn(1, *input_size).to(device)
+    
+    # Use thop to get FLOPs and number of parameters
+    flops, params = profile(model, inputs=(input_data, ), verbose=False)
+
+    return flops, params
+
 #train the model
 def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper_params, verbose = 0, test_transform = None, experiment = False):
 
     #log hyperparameters
     experiment.log_parameters({key: val for key, val in hyper_params.items() if key != "model"}) if experiment else None
 
+    #compute flops and params to compet
+    flops, params = measure_flops_and_time(hyper_params["device"], model)
+    
+    experiment.log_metric("flops", flops) if experiment else None
+    experiment.log_metric("params", params) if experiment else None
+
     #send model to device
-    model.to(hyper_params["device"])
+    model.to(hyper_params["device"], dtype = torch.float32)
 
     #initialise the best validation accuracy
     best_val_acc = 0.0
