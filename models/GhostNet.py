@@ -248,15 +248,14 @@ if __name__ == '__main__':
     x = torch.randn(32, 3, 224, 224)
     net = ghost_net(num_classes=1000, width_mult=1)
 
-    #print the network structure
-    print(net.features[-1])
+    # Use torch.profiler.profile() to measure FLOPS
+    with torch.profiler.profile(profile_memory=True, record_shapes=True) as prof:
+        net(x)
 
+    # Get the total number of FLOPs and total CPU time
+    total_flops = sum(p.numel() for p in net.parameters() if p.requires_grad)
+    total_time = sum(p.self_cpu_time_total for p in prof.key_averages())
 
-
-
-
-    
-
-    
-
-
+    # Print the results
+    print(f"Total FLOPs: {total_flops:.2f}")
+    print(f"Total CPU time: {total_time:.2f} microseconds")
