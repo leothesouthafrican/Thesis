@@ -242,33 +242,3 @@ def ghost_net(**kwargs):
 
 
     return GhostNet(cfgs_small, **kwargs)
-
-import torch
-
-if __name__ == '__main__':
-    
-    from torchsummary import summary
-    from thop import profile
-
-    def measure_flops_and_time(device, model):
-        input_size = (3, 224, 224)
-        model = model.to(device)
-        device_str = str(device)  # Convert torch.device object to string
-
-        input_data = torch.randn(1, *input_size).to(device)
-        
-        # Use thop to get FLOPs and number of parameters
-        flops, params = profile(model, inputs=(input_data, ), verbose=False)
-
-        # Print the results
-        print(f"Total FLOPs: {flops}")
-        print(f"Total Parameters: {params}")
-
-        return flops
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model = ghost_net(num_classes=1000, width_mult=1, module_type='ghost')
-
-    flops = measure_flops_and_time(device, model)
-    print(flops)
