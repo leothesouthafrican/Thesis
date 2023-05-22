@@ -1,5 +1,5 @@
 import sys
-sys.path.append("/Users/leo/Desktop/Thesis/utils/")
+sys.path.append("/Users/leo/Programming/Thesis/utils")
 
 import time
 import shutil

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision
-from torchvision.models import mobilenet_v3_large, mobilenet_v3_small, MobileNet_V3_Large_Weights as weights_large, MobileNet_V3_Small_Weights as weights_small
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights as weights_small
 
 
 class MBNV3_Creator(nn.Module):
@@ -70,11 +70,8 @@ class MBNV3_Creator(nn.Module):
         self.set_all_parameters_trainable()
         return self.model
     
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MBNV3_Creator(num_classes=1000, device=device, module=None)
-    model = model.build_model()
-    print(model.features[-1])
-
-    #print the classifier
-    print(model.classifier)
+    def forward(self, x):
+        """
+        This function is used to forward the input through the model.
+        """
+        return self.model(x)
