@@ -252,7 +252,7 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
 #validate the model
 def validate(model, val_loader, criterion, hyper_params, verbose, test_transform = None, experiment = False):
 
-    attention = VisualizeAttention(model, path = "/Users/leo/Programming/Thesis/data/att_viz_test/ImageNet_100_att/", hyper_params = hyper_params, transform = test_transform, experiment = experiment)
+    attention = VisualizeAttention(model, path = "/Users/leo/Programming/Thesis/data/att_viz_test/vgg_200/", hyper_params = hyper_params, transform = test_transform, experiment = experiment)
 
     #set model to evaluation mode
     model.eval()
