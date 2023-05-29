@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import math
 
+#set the random seed
+torch.manual_seed(42)
+
 def _make_divisible(v, divisor, min_value=None):
     """
     This function is taken from the original tf repo.

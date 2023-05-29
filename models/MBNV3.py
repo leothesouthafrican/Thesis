@@ -3,6 +3,9 @@ import torch.nn as nn
 import torchvision
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights as weights_small
 
+#set the random seed
+torch.manual_seed(42)
+
 
 class MBNV3_Creator(nn.Module):
     """

@@ -16,6 +16,7 @@ from image_attention_vis import VisualizeAttention
 from PIL import Image
 from torchsummary import summary
 from thop import profile
+from sklearn.model_selection import train_test_split
 
 #setting the seed for reproducibility
 torch.manual_seed(42)
@@ -356,11 +357,6 @@ def plot_metrics(train_losses, train_acc, val_losses, val_acc):
     plt.show()
 
 
-import os
-import shutil
-import numpy as np
-from PIL import Image
-from sklearn.model_selection import train_test_split
 
 def process_images(input_path, output_path, n, split_ratio):
     # Step 1
@@ -383,18 +379,11 @@ def process_images(input_path, output_path, n, split_ratio):
     for folder in class_folders:
         os.makedirs(os.path.join(output_path, folder), exist_ok=True)
         images = [f for f in os.listdir(os.path.join(input_path, folder)) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        dimensions = [Image.open(os.path.join(input_path, folder, img)).size for img in images]
-        std_dev = np.std(dimensions, axis=0)
-        mean_dim = avg_dimensions[folder]
         moved, left = 0, 0
-        for img, dim in zip(images, dimensions):
-            if (dim[0] > mean_dim[0] - std_dev[0]) and (dim[1] > mean_dim[1] - std_dev[1]):
-                shutil.copy(os.path.join(input_path, folder, img), os.path.join(output_path, folder, img))
-                moved += 1
-            else:
-                left += 1
+        for img in images:
+            shutil.copy(os.path.join(input_path, folder, img), os.path.join(output_path, folder, img))
+            moved += 1
         moved_counts[folder] = (moved, left)
-        print(f'{folder}: {moved} moved, {left} left behind')
 
     # Step 4
     for folder in class_folders:
@@ -411,10 +400,11 @@ def process_images(input_path, output_path, n, split_ratio):
     for folder in class_folders:
         shutil.rmtree(os.path.join(output_path, folder))
 
+
 # Example usage:
 if __name__ == '__main__':
-    input_path = '/Users/leo/Desktop/TinyNet/ILSVRC/Data/CLS-LOC/train/'
-    output_path = '/Users/leo/Desktop/Thesis/data/ImageNet_100/'
-    n = 100
-    split_ratio = [0.8, 0.1, 0.1]
+    input_path = '/Users/leo/Programming/VGGFace2/data/train/'
+    output_path = '/Users/leo/Programming/Thesis/data/VGG_25/'
+    n = 25
+    split_ratio = [0.7, 0.15, 0.15]
     process_images(input_path, output_path, n, split_ratio)
