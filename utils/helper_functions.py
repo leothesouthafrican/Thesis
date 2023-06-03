@@ -403,8 +403,8 @@ def process_images(input_path, output_path, n, split_ratio):
 
 # Example usage:
 if __name__ == '__main__':
-    input_path = '/Users/leo/Programming/VGGFace2/data/train/'
-    output_path = '/Users/leo/Programming/Thesis/data/VGG_25/'
+    input_path = '/Users/leo/Programming/TinyNet/ILSVRC/Data/CLS-LOC/train/'
+    output_path = '/Users/leo/Programming/Thesis/data/ImageNet_25/'
     n = 25
     split_ratio = [0.7, 0.15, 0.15]
     process_images(input_path, output_path, n, split_ratio)

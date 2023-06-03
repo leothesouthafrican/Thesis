@@ -85,21 +85,15 @@ class GhostModule(nn.Module):
         return out[:, :self.output_channels, :, :]
     
 class GhostBlockCBAM(nn.Module):
-    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, module_type):
+    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se):
         super(GhostBlockCBAM, self).__init__()
         assert stride in [1, 2]
 
         self.conv = nn.Sequential()
         new_layers = []
+
         # pw
-        if module_type == 'control':
-            new_layers.append(ControlModule(inp, hidden_dim, kernel_size=1, stride=1, relu=True))
-        elif module_type == 'depthwise_seperable':
-            new_layers.append(DepthwiseSeperableModule(inp, hidden_dim, kernel_size=1, stride=1, relu=True))
-        elif module_type == 'ghost':
-            new_layers.append(GhostModule(inp, hidden_dim, kernel_size=1, relu=True))
-        else:
-            raise ValueError('Invalid module type')
+        new_layers.append(GhostModule(inp, hidden_dim, kernel_size=1, relu=True))
         
         # dw
         new_layers.append(depthwise_conv(hidden_dim, hidden_dim, kernel_size, stride)) if stride==2 else None
@@ -126,7 +120,7 @@ class GhostBlockCBAM(nn.Module):
     
 
 class GhostNetCBAM(nn.Module):
-    def __init__(self, cfgs, num_classes=1000, width_mult=1, module_type='ghost'):
+    def __init__(self, cfgs, num_classes=1000, width_mult=1):
         super(GhostNetCBAM, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
@@ -145,7 +139,7 @@ class GhostNetCBAM(nn.Module):
         for k, exp_size, c, use_se, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 4)
             hidden_channel = _make_divisible(exp_size * width_mult, 4)
-            layers.append(block(input_channel, hidden_channel, output_channel, k, s, use_se, module_type=module_type))
+            layers.append(block(input_channel, hidden_channel, output_channel, k, s, use_se))
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
 
@@ -227,3 +221,9 @@ def ghost_net(**kwargs):
 
 
     return GhostNetCBAM(cfgs_small, **kwargs)
+
+if __name__ == '__main__':
+    net = ghost_net(num_classes=1000, width_mult=1)
+    x = torch.randn(2, 3, 224, 224)
+    y = net(x)
+    print(y.shape)

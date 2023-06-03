@@ -21,10 +21,12 @@ class PSA(nn.Module):
         output_features = [getattr(self, f"conv_{i+1}")(x) for i in range(len(self.conv_kernels))]
         feats = torch.cat(output_features, dim=1)
         feats = feats.view(batch_size, len(self.conv_kernels), self.split_channel, feats.shape[2], feats.shape[3])
+        print(f"Shape of feats: {feats.shape}")
 
         x_se = [self.se(x) for x in output_features]
         x_se = torch.cat(x_se, dim=1)
         x_se = x_se.view(batch_size, len(self.conv_kernels), self.split_channel, x_se.shape[2], x_se.shape[3])
+        print(f"Shape of x_se: {x_se.shape}")
 
         # Compute the attention weights
         weights = torch.softmax(x_se, dim=1)
