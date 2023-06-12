@@ -156,6 +156,10 @@ def measure_flops_and_time(device, model):
 #train the model
 def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper_params, verbose = 0, test_transform = None, experiment = False):
 
+    #initialise the attention visualizer
+    epoch = 0
+    attention = VisualizeAttention(model, path = "/Users/leo/Programming/Thesis/data/att_viz_test/vgg_200/", hyper_params = hyper_params, transform = test_transform, experiment = experiment)    
+
     #log hyperparameters
     experiment.log_parameters({key: val for key, val in hyper_params.items() if key != "model"}) if experiment else None
 
@@ -178,6 +182,7 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
     train_acc = []
     val_losses = []
     val_acc = []
+    
     #loop through epochs
     for epoch in range(hyper_params['epochs']):
         #initialise variables to store metrics
@@ -234,6 +239,9 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
             experiment.log_metric("val_loss", val_loss, step=epoch)
             experiment.log_metric("val_acc", vall_acc, step=epoch)
 
+        #log images to comet_ml
+        attention.log_images() if experiment else None
+
         if verbose > 1:
             # Print the statistics of the epoch
             print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
@@ -247,13 +255,12 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
             if verbose > 0:
                 print(f"Best Accuracy Achieved: {best_val_acc*100:.2f}% on epoch {epoch+1:02}")
 
+    epoch += 1
     #return metrics
     return train_losses, train_acc, val_losses, val_acc
 
 #validate the model
 def validate(model, val_loader, criterion, hyper_params, verbose, test_transform = None, experiment = False):
-
-    attention = VisualizeAttention(model, path = "/Users/leo/Programming/Thesis/data/att_viz_test/vgg_200/", hyper_params = hyper_params, transform = test_transform, experiment = experiment)
 
     #set model to evaluation mode
     model.eval()
@@ -276,9 +283,6 @@ def validate(model, val_loader, criterion, hyper_params, verbose, test_transform
     #calculate epoch loss and accuracy
     epoch_loss = running_loss / len(val_loader.dataset)
     epoch_acc = running_corrects.float() / len(val_loader.dataset)
-
-    #log images to comet_ml
-    attention.log_images() if experiment else None
 
     #return metrics
     return epoch_loss, epoch_acc
