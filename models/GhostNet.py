@@ -43,39 +43,6 @@ class SELayer(nn.Module):
         y = torch.clamp(y, 0, 1)
         return x * y
 
-class ControlModule(nn.Module):
-    def __init__ (self, input_channels, output_channels, kernel_size, stride, relu = True):
-        super(ControlModule, self).__init__()
-        self.output_channels = output_channels
-        self.conv = nn.Sequential(
-            nn.Conv2d(input_channels, output_channels, kernel_size, stride, kernel_size // 2, bias = False),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace = True) if relu else nn.Sequential(),
-        )
-    def forward(self, x):
-        out = self.conv(x)
-        return out
-    
-class DepthwiseSeperableModule(nn.Module):
-    def __init__ (self, input_channels, output_channels, kernel_size, stride, relu = True):
-        super(DepthwiseSeperableModule, self).__init__()
-        self.output_channels = output_channels
-        self.depthwise_conv = nn.Sequential(
-            nn.Conv2d(input_channels, output_channels, kernel_size, stride, kernel_size // 2, groups = input_channels, bias = False),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace = True) if relu else nn.Sequential(),
-        )
-        self.pointwise_conv = nn.Sequential(
-            nn.Conv2d(output_channels, output_channels, kernel_size=1, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace = True) if relu else nn.Sequential(),
-        )
-
-    def forward(self, x):
-        out = self.depthwise_conv(x)
-        out = self.pointwise_conv(out)
-        return out
-
 class GhostModule(nn.Module):
     def __init__ (self, input_channels, output_channels, kernel_size = 1, ratio = 2, dw_size = 3, stride = 1, relu = True):
         super(GhostModule, self).__init__()
@@ -103,27 +70,20 @@ class GhostModule(nn.Module):
         return out[:, :self.output_channels, :, :]
     
 class GhostBlock(nn.Module):
-    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, module_type):
+    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_att, att_type):
         super(GhostBlock, self).__init__()
         assert stride in [1, 2]
 
         self.conv = nn.Sequential()
         new_layers = []
         # pw
-        if module_type == 'control':
-            new_layers.append(ControlModule(inp, hidden_dim, kernel_size=1, stride=1, relu=True))
-        elif module_type == 'depthwise_seperable':
-            new_layers.append(DepthwiseSeperableModule(inp, hidden_dim, kernel_size=1, stride=1, relu=True))
-        elif module_type == 'ghost':
-            new_layers.append(GhostModule(inp, hidden_dim, kernel_size=1, relu=True))
-        else:
-            raise ValueError('Invalid module type')
+        new_layers.append(GhostModule(inp, hidden_dim, kernel_size=1, relu=True))
         
         # dw
         new_layers.append(depthwise_conv(hidden_dim, hidden_dim, kernel_size, stride)) if stride==2 else None
 
         # Squeeze-and-Excite
-        new_layers.append(SELayer(hidden_dim)) if use_se else None
+        new_layers.append(att_type(hidden_dim)) if use_att else None
 
         # pw-linear to match dimensions
         new_layers.append(GhostModule(hidden_dim, oup, kernel_size=1, relu=False))
@@ -144,7 +104,7 @@ class GhostBlock(nn.Module):
     
 
 class GhostNet(nn.Module):
-    def __init__(self, cfgs, num_classes=1000, width_mult=1, module_type='ghost'):
+    def __init__(self, cfgs, num_classes=1000, width_mult=1, att_type=SELayer):
         super(GhostNet, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
@@ -159,11 +119,10 @@ class GhostNet(nn.Module):
         input_channel = output_channel
 
         # building inverted residual blocks
-        block = GhostBlock
-        for k, exp_size, c, use_se, s in self.cfgs:
+        for k, exp_size, c, use_att, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 4)
             hidden_channel = _make_divisible(exp_size * width_mult, 4)
-            layers.append(block(input_channel, hidden_channel, output_channel, k, s, use_se, module_type=module_type))
+            layers.append(GhostBlock(input_channel, hidden_channel, output_channel, k, s, use_att, att_type))
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
 
@@ -245,3 +204,10 @@ def ghost_net(**kwargs):
 
 
     return GhostNet(cfgs_small, **kwargs)
+
+
+if __name__ == '__main__':
+    net = ghost_net(num_classes=100, att_type=SELayer)
+    x = torch.randn(2,3,32,32)
+    y = net(x)
+    print(y.size())
