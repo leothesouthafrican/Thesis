@@ -211,6 +211,7 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
             _, preds = torch.max(outputs, 1)
             running_corrects += torch.sum(preds == labels.data)
             step += 1
+            sys.stdout.flush()
 
         #calculate epoch loss and accuracy
         epoch_loss = running_loss / len(train_loader.dataset)
@@ -243,16 +244,17 @@ def train(model, train_loader, val_loader, criterion, optimizer,scheduler, hyper
         attention.log_images() if experiment else None
 
         if verbose > 1:
-            # Print the statistics of the epoch
+            print('\n') # print a newline to separate tqdm output and print statements
             print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
             print(f'\tTrain Loss: {epoch_loss:.3f} | Train Acc: {epoch_acc *100:.2f}%')
             print(f'\t Val. Loss: {val_loss:.3f} |  Val. Acc: {vall_acc*100:.2f}%')
-
-        #save the model if it has the best validation accuracy
+            
+        # Save the model if it has the best validation accuracy
         if vall_acc > best_val_acc:
             best_val_acc = vall_acc
             torch.save(model.state_dict(), hyper_params["model_save_path"])
             if verbose > 0:
+                print('\n') # print a newline to separate tqdm output and print statements
                 print(f"Best Accuracy Achieved: {best_val_acc*100:.2f}% on epoch {epoch+1:02}")
 
     epoch += 1
@@ -280,6 +282,7 @@ def validate(model, val_loader, criterion, hyper_params, verbose, test_transform
         running_loss += loss.item() * inputs.size(0)
         _, preds = torch.max(outputs, 1)
         running_corrects += torch.sum(preds == labels.data)
+        sys.stdout.flush()
     #calculate epoch loss and accuracy
     epoch_loss = running_loss / len(val_loader.dataset)
     epoch_acc = running_corrects.float() / len(val_loader.dataset)

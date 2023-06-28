@@ -204,10 +204,3 @@ def ghost_net(**kwargs):
 
 
     return GhostNet(cfgs_small, **kwargs)
-
-
-if __name__ == '__main__':
-    net = ghost_net(num_classes=100, att_type=SELayer)
-    x = torch.randn(2,3,32,32)
-    y = net(x)
-    print(y.size())
