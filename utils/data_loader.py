@@ -32,11 +32,6 @@ class ImageNetDataset(Dataset):
             image = self.transform(image)
 
         return image, label
-
-
-
-
-
     
 def load_synset_mapping(synset_mapping_file):
     """Loads a synset mapping file"""
