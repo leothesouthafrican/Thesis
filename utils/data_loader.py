@@ -5,11 +5,12 @@ from PIL import Image
 import pandas as pd
 
 class ImageNetDataset(Dataset):
-    def __init__(self, csv_file, root_dir, train=True, transform=None):
+    def __init__(self, csv_file, root_dir, synset_mapping, transform=None, train=True):
         self.df = pd.read_csv(csv_file)
         self.root_dir = root_dir
-        self.train = train
+        self.synset_mapping = synset_mapping  # mapping from synset string to numerical label
         self.transform = transform
+        self.train = train
 
     def __len__(self):
         return len(self.df)
@@ -27,28 +28,9 @@ class ImageNetDataset(Dataset):
         image = Image.open(img_name).convert('RGB')
         label_bounding_box = self.df.iloc[idx, 1]
         label, _ = label_bounding_box.split(" ", 1)
+        label = self.synset_mapping[label]  # Convert string label to numerical label
 
         if self.transform:
             image = self.transform(image)
 
         return image, label
-    
-def load_synset_mapping(synset_mapping_file):
-    """Loads a synset mapping file"""
-    synset_mapping = {}
-    with open(synset_mapping_file) as f:
-        lines = f.readlines()
-    for idx, line in enumerate(lines):
-        line = line.strip()  # Remove trailing newline
-        synset, class_name = line.split(" ", 1)  # Split only once
-        synset_mapping[int(idx)] = class_name  # Map numerical index to class name
-    return synset_mapping
-
-
-def load_index_mapping(synset_mapping):
-    """Creates a mapping from synset to numerical index"""
-    index_mapping = {synset: idx for idx, synset in enumerate(synset_mapping.keys())}
-    return index_mapping
-
-
-
