@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import time
-from SE_weight_module import SqueezeExcitation
+from .SE_weight_module import SqueezeExcitation
+
 
 def LCM_64(n):
     return ((n + 63) // 64) * 64

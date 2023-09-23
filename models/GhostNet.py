@@ -2,6 +2,24 @@ import torch
 import torch.nn as nn
 import math
 
+"""
+This script implements the GhostNet neural network architecture. GhostNet is designed to generate more feature maps with cheap operations, thus reducing the computational cost. The code provides the ability to inject attention mechanisms into the GhostNet's blocks.
+
+The main components are:
+1. GhostModule: Responsible for producing the feature maps. It does so by applying a primary convolution operation and then a cheap operation.
+2. GhostBlock: Comprises of a GhostModule followed by depthwise convolutions. Also, the block can optionally contain attention mechanisms.
+3. GhostNet: The overall architecture that chains the GhostBlocks together and provides a classifier at the end.
+
+Usage:
+- To utilize a different attention mechanism, simply import the desired attention mechanism from its module.
+  For example, to use a "NewAttention" mechanism from the "attention_mechs.NewAttentionModule", you would do:
+  from attention_mechs.NewAttentionModule import NewAttention as DesiredAttentionType
+  and then, while creating the GhostNet model, pass it as:
+  model = ghost_net(att_type=DesiredAttentionType).to(device)
+
+Currently, as seen at the bottom of the code, "ScaleAttention" from the "attention_mechs.ScaleAttention" module is being used.
+"""
+
 #set the random seed
 torch.manual_seed(42)
 
@@ -204,3 +222,22 @@ def ghost_net(**kwargs):
 
 
     return GhostNet(cfgs_small, **kwargs)
+
+if __name__ == '__main__':
+    # Setting the device for torch
+    device = torch.device("mps")
+    from attention_mechs.ScaleAttention import PyConv as SAL
+
+    
+    # Create a dummy input tensor of shape [batch_size, channels, height, width]
+    x = torch.randn((2, 3, 224, 224)).to(device)
+    
+    # Create the GhostNet model with SAL as the attention mechanism
+    model = ghost_net(att_type=SAL).to(device)
+    print(model)
+
+    # Forward pass
+    output = model(x)
+    
+    # Print the output shape
+    print("Output shape:", output.shape)

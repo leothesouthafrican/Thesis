@@ -1,6 +1,20 @@
 import torch
 import torch.nn as nn
 
+# CBAM.py
+
+# ChannelAttention: Focuses on aggregating different channel's information.
+# It utilizes global average pooling and global max pooling, 
+# followed by shared multi-layer perceptrons (MLP) to produce 
+# channel attention weights.
+
+# SpatialAttention: Focuses on aggregating different spatial locations' information.
+# This module leverages both average and max operations across channels 
+# to produce a 2-channel representation, which is then processed by a 
+# 2D convolution to obtain the spatial attention map.
+
+# _CBAM: Represents the full CBAM block that sequentially applies 
+# channel and spatial attention mechanisms.
 
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
@@ -45,12 +59,7 @@ class _CBAM(nn.Module):
         self.sa = SpatialAttention()
 
     def forward(self, x):
-        b, c, h, w = x.shape
-
         f_prime = self.ca(x)
-        if h > 14 and w > 14:
-            f_double_prime = self.sa(f_prime)
-        else:
-            f_double_prime = f_prime
+        f_double_prime = self.sa(f_prime)
 
         return f_double_prime

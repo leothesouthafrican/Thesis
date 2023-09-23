@@ -1,6 +1,22 @@
 import torch
 import torch.nn as nn
 
+# CBAM_Light.py
+
+# ChannelAttention and SpatialAttention modules in this file 
+# are identical to the ones found in CBAM.py.
+
+# The main distinction is in the _CBAM block:
+# The application of spatial attention is conditional based on 
+# the height and width of the input feature map.
+# Specifically:
+# - If both the height and width of the input feature map (h and w) 
+#   are greater than 7, both channel and spatial attentions are applied.
+# - Otherwise, only channel attention is applied.
+
+# This conditional application results in a "lighter" variant of CBAM
+# as it might avoid the spatial attention (which involves a convolution) 
+# on smaller feature maps, thus potentially saving computational resources.
 
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
@@ -45,7 +61,18 @@ class _CBAM(nn.Module):
         self.sa = SpatialAttention()
 
     def forward(self, x):
+        b, c, h, w = x.shape
+
         f_prime = self.ca(x)
-        f_double_prime = self.sa(f_prime)
+        if h > 7 and w > 7:
+            f_double_prime = self.sa(f_prime)
+        else:
+            f_double_prime = f_prime
 
         return f_double_prime
+    
+if __name__ == '__main__':
+    cbam = _CBAM(7)
+    x = torch.randn(1, 7, 56, 56)
+    y = cbam(x)
+    print(y.shape)

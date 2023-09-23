@@ -1,7 +1,21 @@
 import torch
 import torch.nn as nn
-from DANet import CAM
 
+# CBAM_UltraLight
+
+# Once again, the ChannelAttention and SpatialAttention implementations
+# in this file are consistent with those found in CBAM.py and CBAM_Light.py.
+
+# The key difference in this variant lies in the _CBAM block:
+# The criterion for the application of spatial attention here is 
+# more stringent than in CBAM_Light.py.
+# Namely:
+# - Spatial attention is applied only if both the height and width 
+#   of the input feature map (h and w) exceed 14.
+
+# This renders the module "ultra light" since it imposes an even stricter 
+# condition on the application of the spatial attention mechanism.
+# This can lead to further computational savings, especially on smaller feature maps.
 
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
@@ -43,23 +57,15 @@ class _CBAM(nn.Module):
     def __init__(self, in_channels, reduction_ratio=16):
         super().__init__()
         self.ca = ChannelAttention(in_channels, reduction_ratio)
-        self.CAM = CAM(in_channels)
         self.sa = SpatialAttention()
 
     def forward(self, x):
         b, c, h, w = x.shape
 
         f_prime = self.ca(x)
-        f_prime =self.CAM(f_prime)
-        if h > 7 and w > 7:
+        if h > 14 and w > 14:
             f_double_prime = self.sa(f_prime)
         else:
             f_double_prime = f_prime
 
         return f_double_prime
-    
-
-if __name__ == '__main__':
-    x = torch.randn(1, 16, 224, 224)
-    model = _CBAM(16)
-    print(model(x).shape)

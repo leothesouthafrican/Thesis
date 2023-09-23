@@ -3,6 +3,25 @@ import torch.nn as nn
 import time
 from SE_weight_module import SqueezeExcitation
 
+"""
+Differences between ScaleAttention and ScaleAttentionLight:
+
+1. Convolution Kernels and Groups:
+   - ScaleAttention uses four distinct convolution kernel sizes ([3, 5, 7, 9]) and has four group settings for 
+     grouped convolutions ([1, 4, 8, 16]).
+   - ScaleAttentionLight simplifies this by employing only two convolution kernel sizes ([3, 7]). Each output 
+     channel is produced by its individual filter (equivalent to using `groups = self.exp_channels_out`).
+
+2. Model Structure:
+   - In ScaleAttention, four separate convolutional layers are explicitly defined for each kernel size.
+   - ScaleAttentionLight employs a for-loop to dynamically create the convolutional layers for its two kernel sizes, 
+     making the structure more concise and potentially more extensible for additional kernel sizes in the future.
+
+Note: The "Light" in ScaleAttentionLight suggests that this model is a lightweight variant of the original, 
+optimized for efficiency and reduced complexity.
+"""
+
+
 def LCM_64(n):
     return ((n + 63) // 64) * 64
 
@@ -15,48 +34,29 @@ class PyConv(nn.Module):
         self.exp_channels = LCM_64(in_channels)
 
         # Define the initial conv_kernels and self.pyconv_groups
-        self.conv_kernels = [3, 5, 7, 9]
-        self.pyconv_groups = [1, 4, 8, 16]
+        self.conv_kernels = [3, 7]
 
 
         self.exp_conv = nn.Sequential(
-            #decrease height and width by 2 using maxpool
-            nn.MaxPool2d(kernel_size = 3, stride = 2, padding = 1),
-            nn.Conv2d(in_channels, self.exp_channels, kernel_size = 1, stride = stride, padding = "same", bias = False),
 
+            nn.Conv2d(in_channels, self.exp_channels, kernel_size = 1, stride = stride, padding = "same", bias = False),
             nn.BatchNorm2d(self.exp_channels),
             nn.ReLU(inplace = True)
         )
 
         # Define the number of output channels for each convolution
-        self.exp_channels_out = self.exp_channels // len(self.pyconv_groups)
+        self.exp_channels_out = self.exp_channels // len(self.conv_kernels)
 
         # Define the squeeze and excitation layer
         self.se = SqueezeExcitation(self.exp_channels_out)
 
-        self.first_conv = nn.Sequential(
-            nn.Conv2d(self.exp_channels, self.exp_channels_out, kernel_size = self.conv_kernels[0], stride = 1, padding = "same", groups = self.pyconv_groups[0], bias = False),
-            nn.BatchNorm2d(self.exp_channels_out),
-            nn.ReLU(inplace = True)
-        )
-
-        self.second_conv = nn.Sequential(
-            nn.Conv2d(self.exp_channels, self.exp_channels_out, kernel_size = self.conv_kernels[1], stride = 1, padding = "same", groups = self.pyconv_groups[1], bias = False),
-            nn.BatchNorm2d(self.exp_channels_out),
-            nn.ReLU(inplace = True)
-        )
-
-        self.third_conv = nn.Sequential(
-            nn.Conv2d(self.exp_channels, self.exp_channels_out, kernel_size = self.conv_kernels[2], stride = 1, padding = "same", groups = self.pyconv_groups[2], bias = False),
-            nn.BatchNorm2d(self.exp_channels_out),
-            nn.ReLU(inplace = True)
-        )
-
-        self.fourth_conv = nn.Sequential(
-            nn.Conv2d(self.exp_channels, self.exp_channels_out, kernel_size = self.conv_kernels[3], stride = 1, padding = "same", groups = self.pyconv_groups[3], bias = False),
-            nn.BatchNorm2d(self.exp_channels_out),
-            nn.ReLU(inplace = True)
-        )
+        #For each conv_kernel, define a convolution layer
+        for i in range(len(self.conv_kernels)):
+            setattr(self, f"conv_{i}", nn.Sequential( 
+                nn.Conv2d(self.exp_channels, self.exp_channels_out, kernel_size = self.conv_kernels[i], stride = 1, padding = "same", groups = self.exp_channels_out, bias = False),
+                nn.BatchNorm2d(self.exp_channels_out),
+                nn.ReLU(inplace = True)
+            ))
 
         self.reduce_conv = nn.Sequential(
             nn.Conv2d(self.exp_channels, self.in_channels, kernel_size = 1, stride = 1, padding = "same", bias = False),
@@ -65,16 +65,13 @@ class PyConv(nn.Module):
         )
 
 
+
     def forward(self, x):
-
-        # Store the original height and width
-        original_height, original_width = x.shape[2], x.shape[3]
-
         # Apply each of the convolutions to the input feature
         expanded_x = self.exp_conv(x)
         b , c, h, w = expanded_x.shape
 
-        output_features = [self.first_conv(expanded_x), self.second_conv(expanded_x), self.third_conv(expanded_x), self.fourth_conv(expanded_x)]
+        output_features = [getattr(self, f"conv_{i}")(expanded_x) for i in range(len(self.conv_kernels))]
         feats = torch.cat(output_features, dim=1)
         feats = feats.view(b, len(self.conv_kernels), c//len(self.conv_kernels), h, w)
 
@@ -91,13 +88,7 @@ class PyConv(nn.Module):
         # Reduce the number of channels back to the original
         weighted_feats = self.reduce_conv(weighted_feats)
 
-        # Now create an upsample layer with the original dimensions
-        upsample = nn.Upsample(size=(original_height, original_width), mode='bilinear', align_corners=True)
-    
-        # Upscale the features back to the original size
-        upscaled_feats = upsample(weighted_feats)
-
-        return upscaled_feats
+        return weighted_feats
 
 if __name__ == "__main__":
     start = time.time()
@@ -105,7 +96,6 @@ if __name__ == "__main__":
     x = torch.randn(1, in_channels, 224, 224)
     model = PyConv(in_channels)
     out = model(x)
-    print(out.shape)
     end = time.time()
     print(f"Time taken: {end - start:.4f} secs")
 
