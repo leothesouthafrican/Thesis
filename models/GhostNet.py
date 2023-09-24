@@ -20,6 +20,41 @@ Usage:
 Currently, as seen at the bottom of the code, "ScaleAttention" from the "attention_mechs.ScaleAttention" module is being used.
 """
 
+cfgs_large = [
+    # k, t,   c, SE, s     k = kernel_size, t = exp_size, c = output_channel, SE = use_se, s = stride
+    [3,  16,  16, 0, 1],
+    [3,  48,  24, 0, 2],
+    [3,  72,  24, 0, 1],
+    [5,  72,  40, 1, 2],
+    [5, 120,  40, 1, 1],
+    [3, 240,  80, 0, 2],
+    [3, 200,  80, 0, 1],
+    [3, 184,  80, 0, 1],
+    [3, 184,  80, 0, 1],
+    [3, 480, 112, 1, 1],
+    [3, 672, 112, 1, 1],
+    [5, 672, 160, 1, 2],
+    [5, 960, 160, 0, 1],
+    [5, 960, 160, 1, 1],
+    [5, 960, 160, 0, 1],
+    [5, 960, 160, 1, 1]
+]
+
+cfgs_small = [
+    # k, t,   c, SE, s      k = kernel_size, t = exp_size, c = output_channel, SE = use_se, s = stride
+    [3,  16,  16, 1, 2],
+    [3,  72,  24, 0, 2],
+    [3,  88,  24, 0, 1],
+    [5,  96,  40, 1, 2],
+    [5, 240,  40, 1, 1],
+    [5, 240,  40, 1, 1],
+    [5, 120,  48, 1, 1],
+    [5, 144,  48, 1, 1],
+    [5, 288,  96, 1, 2],
+    [5, 576,  96, 1, 1],
+    [5, 576,  96, 1, 1],
+]
+
 #set the random seed
 torch.manual_seed(42)
 
@@ -181,47 +216,12 @@ class GhostNet(nn.Module):
                 m.bias.data.zero_()
 
 
-def ghost_net(**kwargs):
+def ghost_net(cfgs=cfgs_small, **kwargs):
     """
     Constructs a GhostNet model
     """
-    cfgs_large = [
-        # k, t, c, SE, s k = kernel_size, t = exp_size, c = output_channel, SE = use_se, s = stride
-        [3,  16,  16, 0, 1],
-        [3,  48,  24, 0, 2],
-        [3,  72,  24, 0, 1],
-        [5,  72,  40, 1, 2],
-        [5, 120,  40, 1, 1],
-        [3, 240,  80, 0, 2],
-        [3, 200,  80, 0, 1],
-        [3, 184,  80, 0, 1],
-        [3, 184,  80, 0, 1],
-        [3, 480, 112, 1, 1],
-        [3, 672, 112, 1, 1],
-        [5, 672, 160, 1, 2],
-        [5, 960, 160, 0, 1],
-        [5, 960, 160, 1, 1],
-        [5, 960, 160, 0, 1],
-        [5, 960, 160, 1, 1]
-    ]
-
-    cfgs_small = [
-        # k, t, c, SE, s k = kernel_size, t = exp_size, c = output_channel, SE = use_se, s = stride
-        [3,  16,  16, 1, 2],
-        [3,  72,  24, 0, 2],
-        [3,  88,  24, 0, 1],
-        [5,  96,  40, 1, 2],
-        [5, 240,  40, 1, 1],
-        [5, 240,  40, 1, 1],
-        [5, 120,  48, 1, 1],
-        [5, 144,  48, 1, 1],
-        [5, 288,  96, 1, 2],
-        [5, 576,  96, 1, 1],
-        [5, 576,  96, 1, 1],
-    ]
-
-
-    return GhostNet(cfgs_small, **kwargs)
+    
+    return GhostNet(cfgs, **kwargs)
 
 if __name__ == '__main__':
     # Setting the device for torch
